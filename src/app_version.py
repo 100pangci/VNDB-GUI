@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sys
 
-DEFAULT_VERSION = "1.0.0"
+DEFAULT_VERSION = "dev"
 VERSION_FILE = "version.txt"
 
 
