@@ -34,12 +34,16 @@ def generate_filename(
     group_name: str = "",
     patch_date: str = "",
     language: str = "CHS",
+    use_release_title: bool = False,
 ) -> str:
     """
     Generate a formatted filename for a VN release.
 
     Format:
-    [developer][release_date]original_title[v+VNDB_ID][platform][group][patch_date][language]
+    [developer][release_date]title[v+VNDB_ID][platform][group][patch_date][language]
+
+    When use_release_title is False, title uses the VN's original (Japanese) title.
+    When use_release_title is True, title uses the release's display title instead.
 
     Example:
     [ALcot][20090918]幼なじみは大統領 My girlfriend is the PRESIDENT.[v2622][Windows][Makura Castle][20130314][CHS]
@@ -52,8 +56,11 @@ def generate_filename(
     # --- Release date (YYYYMMDD) ---
     date_str = release.format_released()
 
-    # --- Original title ---
-    original_title = vn_info.get_original_title()
+    # --- Title (game title or release title) ---
+    if use_release_title:
+        title = release.get_display_title()
+    else:
+        title = vn_info.get_original_title()
 
     # --- Platform (use full names from display) ---
     plat_display = release.get_platforms_display()
@@ -80,8 +87,8 @@ def generate_filename(
     # [Date]
     parts.append(f"[{sanitize_filename(date_str)}]")
 
-    # Original title
-    parts.append(sanitize_filename(original_title))
+    # Title
+    parts.append(sanitize_filename(title))
 
     # [v+VNDB_ID] — strip any existing "v" prefix from VNInfo.id
     vid = vn_info.id

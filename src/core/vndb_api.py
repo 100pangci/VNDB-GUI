@@ -162,8 +162,9 @@ class VNRelease:
         for p in self.producers:
             if p.developer:
                 return p.get_display_name() or PLACEHOLDER
-        if self.producers:
-            return self.producers[0].get_display_name() or PLACEHOLDER
+        # Don't fall back to first producer — if none is marked as developer,
+        # there is no developer info. This prevents patch groups on Chinese
+        # releases from being misidentified as the developer.
         return PLACEHOLDER
 
     def get_publisher_name(self) -> str:

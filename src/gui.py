@@ -246,6 +246,12 @@ class VNDBGUI(ctk.CTk):
         self._patch_date = ""
         self._language = "CHS"
 
+        # Title mode: False = use game original title, True = use release display title
+        self._use_release_title = False
+
+        # Suppress flag to prevent double-update from group_var trace during zh click
+        self._suppress_manual_change = False
+
         # ======== Layout ========
         self._build_header()
         self._build_query_row()
@@ -384,14 +390,29 @@ class VNDBGUI(ctk.CTk):
     def _build_manual_card(self):
         self.manual_card = ctk.CTkFrame(self, corner_radius=10)
         self.manual_card.pack(fill="x", padx=20, pady=(6, 0))
-        self.manual_card.grid_columnconfigure(1, weight=1)
+        self.manual_card.grid_columnconfigure(2, weight=1)
+
+        # ── Header row: label + title mode toggle ──
+        self.manual_header_frame = ctk.CTkFrame(self.manual_card, fg_color="transparent")
+        self.manual_header_frame.grid(row=0, column=0, columnspan=3, sticky="w", padx=15, pady=(10, 8))
+
+        self.title_mode_var = ctk.StringVar(value="游戏标题")
+        self.title_mode_btn = ctk.CTkSegmentedButton(
+            self.manual_header_frame,
+            values=["游戏标题", "发行版标题"],
+            variable=self.title_mode_var,
+            font=ui_font(11),
+            height=26,
+            command=self._on_title_mode_change,
+        )
+        self.title_mode_btn.pack(side="left", padx=(0, 12))
 
         self.manual_label = ctk.CTkLabel(
-            self.manual_card,
+            self.manual_header_frame,
             text="附加信息（点击中文发行列表自动填入）",
             font=ui_font(15, "bold"),
         )
-        self.manual_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(10, 8))
+        self.manual_label.pack(side="left")
 
         # Row 1: Group only
         self.group_label = ctk.CTkLabel(self.manual_card, text="汉化组：", font=ui_font(12, "bold"))
@@ -403,7 +424,7 @@ class VNDBGUI(ctk.CTk):
             font=ui_font(12),
             height=30,
         )
-        self.group_entry.grid(row=1, column=1, sticky="ew", padx=(0, 15), pady=(0, 10))
+        self.group_entry.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(0, 15), pady=(0, 10))
 
     def _build_preview_card(self):
         self.preview_card = ctk.CTkFrame(self, corner_radius=10)
@@ -525,8 +546,11 @@ class VNDBGUI(ctk.CTk):
         # Auto-fill Chinese patch info when selecting a zh release
         r = self._zh_releases[idx]
         grp = r.get_non_developer_group_name()
+        # Suppress the group_var trace to avoid double _update_preview
+        self._suppress_manual_change = True
         if grp:
             self.group_var.set(grp)
+        self._suppress_manual_change = False
         patch_date = r.format_released()
         if patch_date and patch_date != PLACEHOLDER:
             self._patch_date = patch_date
@@ -574,6 +598,14 @@ class VNDBGUI(ctk.CTk):
 
     def _on_manual_change(self, *args):
         # Auto-update preview when user manually edits group field
+        if self._suppress_manual_change:
+            return
+        active = self._get_active_release()
+        self._update_preview(active)
+
+    def _on_title_mode_change(self, value: str):
+        """Handle title mode segmented button change."""
+        self._use_release_title = (value == "发行版标题")
         active = self._get_active_release()
         self._update_preview(active)
 
@@ -770,6 +802,7 @@ class VNDBGUI(ctk.CTk):
             group_name=self.group_var.get(),
             patch_date=self._patch_date,
             language=self._language,
+            use_release_title=self._use_release_title,
         )
 
         self.preview_text.configure(state="normal")
