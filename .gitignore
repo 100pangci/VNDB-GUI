@@ -12,6 +12,9 @@ release/
 .eggs/
 *.manifest
 *.spec
+*.pyc
+*.pyo
+*.pyd
 
 # Installer logs
 pip-log.txt

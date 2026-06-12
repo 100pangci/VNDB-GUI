@@ -92,9 +92,11 @@ def generate_filename(
     # [Platform]
     parts.append(f"[{sanitize_filename(platform_str)}]")
 
-    # [Group name] (optional)
+    # [Group name]
     if group_name_clean:
         parts.append(f"[{sanitize_filename(group_name_clean)}]")
+    else:
+        parts.append(f"[{PLACEHOLDER}]")
 
     # [Patch date] (optional)
     if patch_date_clean:

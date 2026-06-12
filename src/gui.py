@@ -99,7 +99,21 @@ class ReleaseRow(ctk.CTkFrame):
             widget.bind("<Leave>", lambda e: self.configure(fg_color="transparent")
                         if not self.is_selected else None)
 
+        # Also bind mouse wheel to propagate to parent scroll frame
+        self.bind("<MouseWheel>", self._propagate_wheel)
+
         self.grid_columnconfigure(1, weight=1)
+
+    @staticmethod
+    def _propagate_wheel(event):
+        """Forward mouse wheel event to the parent scrollable frame."""
+        # Walk up to find the CTkScrollableFrame parent
+        widget = event.widget
+        while widget:
+            if isinstance(widget, ctk.CTkScrollableFrame):
+                widget._parent_canvas.yview_scroll(int(-3 * (event.delta / 120)), "units")
+                return
+            widget = widget.master
 
     def _handle_click(self, event):
         self._on_click(self.row_index)
@@ -250,6 +264,7 @@ class VNDBGUI(ctk.CTk):
             border_width=0,
         )
         self.left_scroll.grid(row=2, column=0, sticky="nsew", padx=4, pady=2)
+        self._bind_scroll_wheel(self.left_scroll)
 
         self.left_count = ctk.CTkLabel(
             self.left_frame, text="（请先搜索）",
@@ -276,12 +291,13 @@ class VNDBGUI(ctk.CTk):
             border_width=0,
         )
         self.right_scroll.grid(row=2, column=0, sticky="nsew", padx=4, pady=2)
+        self._bind_scroll_wheel(self.right_scroll)
 
         self.right_count = ctk.CTkLabel(
             self.right_frame, text="（请先搜索）",
             font=ui_font(11), text_color="gray50",
         )
-        self.right_count.grid(row=3, column=0, sticky="w", padx=8, pady=(2, 6))
+        self.right_count.grid(row=3, column=0, sticky="w", padx=(8, 2), pady=(2, 6))
 
     def _build_manual_card(self):
         self.manual_card = ctk.CTkFrame(self, corner_radius=10)
@@ -427,7 +443,7 @@ class VNDBGUI(ctk.CTk):
         # Auto-fill Chinese patch info when selecting a zh release
         r = self._zh_releases[idx]
         grp = r.get_non_developer_group_name()
-        if grp and grp != PLACEHOLDER:
+        if grp:
             self.group_var.set(grp)
         patch_date = r.format_released()
         if patch_date and patch_date != PLACEHOLDER:
@@ -456,6 +472,20 @@ class VNDBGUI(ctk.CTk):
                 child.set_selected(child.row_index == selected_idx)
 
     # ── Event Handlers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _bind_scroll_wheel(scroll_frame: ctk.CTkScrollableFrame) -> None:
+        """Bind mouse wheel event on the scrollable frame and its inner canvas for smooth scrolling."""
+        # Workaround: CTkScrollableFrame needs focus for wheel events.
+        # Bind on both the frame itself and its internal canvas/widgets.
+        def _on_mousewheel(event):
+            scroll_frame._parent_canvas.yview_scroll(int(-3 * (event.delta / 120)), "units")
+
+        # Bind on the frame
+        scroll_frame.bind("<MouseWheel>", _on_mousewheel, add=True)
+        # Bind on all children recursively (in case future items are added)
+        for child in scroll_frame.winfo_children():
+            child.bind("<MouseWheel>", _on_mousewheel, add=True)
 
     def _on_query_change(self, *args):
         pass
@@ -547,7 +577,7 @@ class VNDBGUI(ctk.CTk):
         if self._zh_releases:
             r = self._zh_releases[0]
             grp = r.get_non_developer_group_name()
-            if grp and grp != PLACEHOLDER:
+            if grp:
                 self.group_var.set(grp)
             patch_date = r.format_released()
             if patch_date and patch_date != PLACEHOLDER:
