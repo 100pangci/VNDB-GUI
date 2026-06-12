@@ -82,7 +82,3 @@ VNDB-GUI/
 所有数据来自 [VNDB](https://vndb.org/) 的 [API v2 (kana)](https://api.vndb.org/kana)。搜索时按以下字段查询：
 - **Visual Novel**: `id, title, alttitle, titles{lang, title, latin}, image`
 - **Release**: `id, title, alttitle, released, platforms, languages{lang}, producers{id, name, developer, publisher}, media{medium, qty}`
-
-## 许可证
-
-MIT
