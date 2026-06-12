@@ -68,7 +68,7 @@ class ReleaseRow(ctk.CTkFrame):
             if group and group != PLACEHOLDER:
                 info = group
             else:
-                info = "汉化组未知"
+                info = "无汉化组数据"
             date_str = release.released or "????-??-??"
             info += f"  |  {date_str}"
         else:
@@ -111,7 +111,7 @@ class ReleaseRow(ctk.CTkFrame):
         widget = event.widget
         while widget:
             if isinstance(widget, ctk.CTkScrollableFrame):
-                widget._parent_canvas.yview_scroll(int(-3 * (event.delta / 120)), "units")
+                widget._parent_canvas.yview_scroll(int(-9 * (event.delta / 120)), "units")
                 return
             widget = widget.master
 
@@ -479,7 +479,7 @@ class VNDBGUI(ctk.CTk):
         # Workaround: CTkScrollableFrame needs focus for wheel events.
         # Bind on both the frame itself and its internal canvas/widgets.
         def _on_mousewheel(event):
-            scroll_frame._parent_canvas.yview_scroll(int(-3 * (event.delta / 120)), "units")
+            scroll_frame._parent_canvas.yview_scroll(int(-9 * (event.delta / 120)), "units")
 
         # Bind on the frame
         scroll_frame.bind("<MouseWheel>", _on_mousewheel, add=True)

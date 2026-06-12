@@ -39,6 +39,15 @@ PLATFORM_MAP: dict[str, str] = {
     "winnt": "Windows NT",
     "web": "Web",
     "oth": "Other",
+    "swi": "Switch",
+    "xb3": "Xbox 360",
+    "mob": "Mobile",
+    "ps2": "PlayStation 2",
+    "ps3": "PlayStation 3",
+    "ps4": "PlayStation 4",
+    "psv": "PlayStation Vita",
+    "psp": "PlayStation Portable",
+
 }
 
 # ── Data classes ──────────────────────────────────────────────────────
