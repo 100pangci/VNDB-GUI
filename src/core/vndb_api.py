@@ -83,6 +83,12 @@ class VNRelease:
             parts.append("00")
         return "".join(parts)
 
+    def get_display_title(self) -> str:
+        """Return the best display title: native (alttitle) if available, else title."""
+        if self.alttitle:
+            return self.alttitle
+        return self.title
+
     def get_developer_name(self) -> str:
         """Return developer name, or PLACEHOLDER."""
         for p in self.producers:

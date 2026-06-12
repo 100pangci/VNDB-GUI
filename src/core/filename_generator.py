@@ -108,7 +108,8 @@ def generate_filename(
 
 
 def get_release_preview(release: VNRelease) -> str:
-    """Generate a human-readable preview string for a release."""
+    """Generate a human-readable preview string for a release (native title)."""
     platforms = ", ".join(release.platforms) if release.platforms else PLACEHOLDER
     languages = ", ".join(release.languages) if release.languages else PLACEHOLDER
-    return f"{release.title} | {release.released or PLACEHOLDER} | {platforms} | {languages}"
+    display_title = release.get_display_title()
+    return f"{display_title} | {release.released or PLACEHOLDER} | {platforms} | {languages}"

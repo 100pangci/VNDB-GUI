@@ -18,6 +18,13 @@ UI_FONT_FAMILY = "Microsoft YaHei UI"
 
 PROJECT_URL = "https://github.com/yourname/vndb-gui"
 
+# Colors
+COLOR_ACTIVE = "#3a7bd5"
+COLOR_HOVER = "#2a5bb5"
+COLOR_BORDER = "#444444"
+COLOR_ZH_BG = "#3a2010"
+COLOR_ZH_BORDER = "#5a3020"
+
 
 def ui_font(size=12, weight="normal"):
     return ctk.CTkFont(family=UI_FONT_FAMILY, size=size, weight=weight)
@@ -27,27 +34,96 @@ ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
 
+class ReleaseRow(ctk.CTkFrame):
+    """A single clickable row in a release list."""
+
+    def __init__(self, master, release: VNRelease, is_selected: bool,
+                 on_click, row_index: int, zh_mode: bool = False, **kwargs):
+        border = COLOR_ZH_BORDER if zh_mode else COLOR_BORDER
+        super().__init__(master, corner_radius=6, border_width=1,
+                         border_color=border, **kwargs)
+
+        self.release = release
+        self.row_index = row_index
+        self.is_selected = is_selected
+        self._on_click = on_click
+        self.zh_mode = zh_mode
+
+        # Selection indicator
+        self.indicator = ctk.CTkLabel(self, text="", width=4, corner_radius=2)
+        self.indicator.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(4, 2))
+
+        # Title (native display name)
+        display = release.get_display_title()
+        self.title_lbl = ctk.CTkLabel(
+            self, text=display, font=ui_font(12, "bold"),
+            anchor="w", wraplength=280,
+        )
+        self.title_lbl.grid(row=0, column=1, sticky="w", padx=(4, 8), pady=(4, 0))
+
+        # Info line: date | platform | languages
+        date_str = release.released or "????-??-??"
+        plat_str = ", ".join(release.platforms) if release.platforms else "?"
+        info = f"{date_str}  |  {plat_str}"
+        self.info_lbl = ctk.CTkLabel(
+            self, text=info, font=ui_font(11),
+            text_color="gray60", anchor="w",
+        )
+        self.info_lbl.grid(row=1, column=1, sticky="w", padx=(4, 8), pady=(0, 4))
+
+        self._apply_selection()
+
+        # Bind click on entire card
+        for widget in (self, self.indicator, self.title_lbl, self.info_lbl):
+            widget.bind("<Button-1>", self._handle_click)
+            widget.bind("<Enter>", lambda e: self.configure(fg_color="#2a2a2a")
+                        if not self.is_selected else None)
+            widget.bind("<Leave>", lambda e: self.configure(fg_color="transparent")
+                        if not self.is_selected else None)
+
+        self.grid_columnconfigure(1, weight=1)
+
+    def _handle_click(self, event):
+        self._on_click(self.row_index)
+
+    def set_selected(self, sel: bool):
+        self.is_selected = sel
+        self._apply_selection()
+
+    def _apply_selection(self):
+        if self.is_selected:
+            self.configure(fg_color="#2a3d5a")
+            self.indicator.configure(text="▌", text_color=COLOR_ACTIVE, font=ui_font(14))
+        else:
+            self.configure(fg_color="transparent")
+            self.indicator.configure(text="", font=ui_font(14))
+
+
 class VNDBGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.geometry("820x760")
-        self.minsize(720, 680)
+        self.geometry("960x820")
+        self.minsize(840, 740)
         self.title(f"VNDB 文件名生成器 — {get_app_version()}")
 
         self.api_client = VNDBAPIClient()
 
         # --- State ---
         self._vn_info: VNInfo | None = None
-        self._releases: list[VNRelease] = []
+        self._all_releases: list[VNRelease] = []
+        self._nonzh_releases: list[VNRelease] = []
+        self._zh_releases: list[VNRelease] = []
         self._searching = False
+
+        # Selection state
+        self._selected_nonzh_idx = 0
+        self._selected_zh_idx = 0
+        self._focus_side = "nonzh"  # which side has focus
 
         # --- Variables ---
         self.query_var = ctk.StringVar(value="")
         self.query_var.trace_add("write", self._on_query_change)
-
-        self.release_var = ctk.StringVar(value="")
-        self.release_var.trace_add("write", self._on_release_change)
 
         self.group_var = ctk.StringVar(value="")
         self.group_var.trace_add("write", self._on_manual_change)
@@ -58,9 +134,22 @@ class VNDBGUI(ctk.CTk):
         self.language_var = ctk.StringVar(value="CHS")
         self.language_var.trace_add("write", self._on_manual_change)
 
-        # ======== Header ========
+        # ======== Layout ========
+        self._build_header()
+        self._build_query_row()
+        self._build_release_panels()   # two side-by-side scroll panels
+        self._build_info_card()        # date, platform, languages — no developer
+        self._build_manual_card()      # group, patch_date, language
+        self._build_preview_card()
+        self._build_footer()
+
+        self._update_preview()
+
+    # ── UI Builders ──────────────────────────────────────────────────
+
+    def _build_header(self):
         self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.header_frame.pack(fill="x", padx=20, pady=(20, 5))
+        self.header_frame.pack(fill="x", padx=20, pady=(15, 0))
 
         self.title_label = ctk.CTkLabel(
             self.header_frame,
@@ -77,16 +166,10 @@ class VNDBGUI(ctk.CTk):
         )
         self.subtitle_label.pack(anchor="w", pady=(2, 0))
 
-        # ======== Query Card ========
+    def _build_query_row(self):
         self.query_card = ctk.CTkFrame(self, corner_radius=10)
-        self.query_card.pack(fill="x", padx=20, pady=(15, 5))
-
-        self.query_label = ctk.CTkLabel(
-            self.query_card,
-            text="搜索 VNDB",
-            font=ui_font(15, "bold"),
-        )
-        self.query_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=15, pady=(12, 8))
+        self.query_card.pack(fill="x", padx=20, pady=(12, 0))
+        self.query_card.grid_columnconfigure(0, weight=1)
 
         self.query_entry = ctk.CTkEntry(
             self.query_card,
@@ -95,7 +178,7 @@ class VNDBGUI(ctk.CTk):
             font=ui_font(13),
             height=36,
         )
-        self.query_entry.grid(row=1, column=0, sticky="ew", padx=(15, 8), pady=(0, 12))
+        self.query_entry.grid(row=0, column=0, sticky="ew", padx=(15, 8), pady=(10, 10))
         self.query_entry.bind("<Return>", lambda e: self.search_api())
 
         self.search_btn = ctk.CTkButton(
@@ -103,25 +186,12 @@ class VNDBGUI(ctk.CTk):
             text="搜索 API",
             font=ui_font(13, "bold"),
             height=36,
-            width=120,
+            width=110,
             fg_color="#2b7a4b",
             hover_color="#1e5f38",
             command=self.search_api,
         )
-        self.search_btn.grid(row=1, column=1, sticky="w", pady=(0, 12))
-
-        self.chinese_patch_btn = ctk.CTkButton(
-            self.query_card,
-            text="汉化版发布",
-            font=ui_font(12, "bold"),
-            height=36,
-            width=110,
-            fg_color="#7a4b2b",
-            hover_color="#5f381e",
-            command=self.auto_fill_chinese_patch,
-            state="disabled",
-        )
-        self.chinese_patch_btn.grid(row=1, column=2, sticky="w", padx=(5, 8), pady=(0, 12))
+        self.search_btn.grid(row=0, column=1, sticky="w", padx=(0, 8), pady=(10, 10))
 
         self.status_indicator = ctk.CTkLabel(
             self.query_card,
@@ -129,129 +199,166 @@ class VNDBGUI(ctk.CTk):
             font=ui_font(11),
             text_color="gray50",
         )
-        self.status_indicator.grid(row=1, column=3, sticky="w", padx=(8, 15), pady=(0, 12))
+        self.status_indicator.grid(row=0, column=2, sticky="w", padx=(8, 15), pady=(10, 10))
 
-        self.query_card.grid_columnconfigure(0, weight=1)
+    def _build_release_panels(self):
+        """Two side-by-side scrollable panels with clickable release rows."""
+        self.panel_frame = ctk.CTkFrame(self, corner_radius=10)
+        self.panel_frame.pack(fill="both", expand=True, padx=20, pady=(8, 0))
+        self.panel_frame.grid_columnconfigure(0, weight=1)
+        self.panel_frame.grid_columnconfigure(1, weight=1)
+        self.panel_frame.grid_rowconfigure(1, weight=1)
 
-        # ======== Release Selection Card ========
-        self.release_card = ctk.CTkFrame(self, corner_radius=10)
-        self.release_card.pack(fill="x", padx=20, pady=5)
-
-        self.release_label = ctk.CTkLabel(
-            self.release_card,
+        header = ctk.CTkLabel(
+            self.panel_frame,
             text="选择发行版本",
             font=ui_font(15, "bold"),
         )
-        self.release_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(12, 6))
+        header.grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(10, 6))
 
-        self.release_combo = ctk.CTkOptionMenu(
-            self.release_card,
-            variable=self.release_var,
-            values=["（请先搜索）"],
-            font=ui_font(12),
-            width=500,
-            dynamic_resizing=False,
+        # ── Left: Non-Chinese ──
+        self.left_frame = ctk.CTkFrame(self.panel_frame, corner_radius=8,
+                                       border_width=1, border_color=COLOR_BORDER)
+        self.left_frame.grid(row=1, column=0, sticky="nsew", padx=(15, 6), pady=(0, 10))
+        self.left_frame.grid_rowconfigure(2, weight=1)
+        self.left_frame.grid_columnconfigure(0, weight=1)
+
+        self.left_header = ctk.CTkLabel(
+            self.left_frame, text="原版发行（非中文）",
+            font=ui_font(13, "bold"),
+            fg_color="#2a2a2a", corner_radius=6,
         )
-        self.release_combo.grid(row=1, column=0, columnspan=2, sticky="ew", padx=15, pady=(0, 12))
+        self.left_header.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 4))
 
-        self.release_card.grid_columnconfigure(0, weight=1)
+        self.left_scroll = ctk.CTkScrollableFrame(
+            self.left_frame, corner_radius=6,
+            border_width=0,
+        )
+        self.left_scroll.grid(row=2, column=0, sticky="nsew", padx=4, pady=2)
 
-        # ======== Release Info Display ========
+        self.left_count = ctk.CTkLabel(
+            self.left_frame, text="（请先搜索）",
+            font=ui_font(11), text_color="gray50",
+        )
+        self.left_count.grid(row=3, column=0, sticky="w", padx=8, pady=(2, 6))
+
+        # ── Right: Chinese ──
+        self.right_frame = ctk.CTkFrame(self.panel_frame, corner_radius=8,
+                                        border_width=1, border_color=COLOR_ZH_BORDER)
+        self.right_frame.grid(row=1, column=1, sticky="nsew", padx=(6, 15), pady=(0, 10))
+        self.right_frame.grid_rowconfigure(2, weight=1)
+        self.right_frame.grid_columnconfigure(0, weight=1)
+
+        self.right_header = ctk.CTkLabel(
+            self.right_frame, text="汉化版（中文）",
+            font=ui_font(13, "bold"),
+            fg_color=COLOR_ZH_BG, corner_radius=6,
+        )
+        self.right_header.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 4))
+
+        self.right_scroll = ctk.CTkScrollableFrame(
+            self.right_frame, corner_radius=6,
+            border_width=0,
+        )
+        self.right_scroll.grid(row=2, column=0, sticky="nsew", padx=4, pady=2)
+
+        self.right_count = ctk.CTkLabel(
+            self.right_frame, text="（请先搜索）",
+            font=ui_font(11), text_color="gray50",
+        )
+        self.right_count.grid(row=3, column=0, sticky="w", padx=8, pady=(2, 6))
+
+    def _build_info_card(self):
+        """Info display: date, platform, languages. No developer."""
         self.info_card = ctk.CTkFrame(self, corner_radius=10)
-        self.info_card.pack(fill="x", padx=20, pady=5)
+        self.info_card.pack(fill="x", padx=20, pady=(6, 0))
         self.info_card.grid_columnconfigure(1, weight=1)
+        self.info_card.grid_columnconfigure(3, weight=1)
 
-        # Row 0: Developer
-        self.dev_label = ctk.CTkLabel(self.info_card, text="开发商：", font=ui_font(12, "bold"))
-        self.dev_label.grid(row=0, column=0, sticky="w", padx=(15, 5), pady=(10, 4))
-        self.dev_value = ctk.CTkLabel(self.info_card, text="—", font=ui_font(12))
-        self.dev_value.grid(row=0, column=1, sticky="w", padx=(0, 15), pady=(10, 4))
-
-        # Row 1: Release Date
+        # Row 0: Date | Platform
         self.date_label = ctk.CTkLabel(self.info_card, text="发售日期：", font=ui_font(12, "bold"))
-        self.date_label.grid(row=1, column=0, sticky="w", padx=(15, 5), pady=4)
+        self.date_label.grid(row=0, column=0, sticky="w", padx=(15, 5), pady=(10, 4))
         self.date_value = ctk.CTkLabel(self.info_card, text="—", font=ui_font(12))
-        self.date_value.grid(row=1, column=1, sticky="w", padx=(0, 15), pady=4)
+        self.date_value.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(10, 4))
 
-        # Row 2: Platform
         self.platform_label = ctk.CTkLabel(self.info_card, text="平台：", font=ui_font(12, "bold"))
-        self.platform_label.grid(row=2, column=0, sticky="w", padx=(15, 5), pady=4)
+        self.platform_label.grid(row=0, column=2, sticky="w", padx=(5, 5), pady=(10, 4))
         self.platform_value = ctk.CTkLabel(self.info_card, text="—", font=ui_font(12))
-        self.platform_value.grid(row=2, column=1, sticky="w", padx=(0, 15), pady=4)
+        self.platform_value.grid(row=0, column=3, sticky="w", padx=(0, 15), pady=(10, 4))
 
-        # Row 3: Languages
-        self.lang_info_label = ctk.CTkLabel(self.info_card, text="语言：", font=ui_font(12, "bold"))
-        self.lang_info_label.grid(row=3, column=0, sticky="w", padx=(15, 5), pady=(4, 10))
-        self.lang_info_value = ctk.CTkLabel(self.info_card, text="—", font=ui_font(12))
-        self.lang_info_value.grid(row=3, column=1, sticky="w", padx=(0, 15), pady=(4, 10))
+        # Row 1: Languages
+        self.lang_label = ctk.CTkLabel(self.info_card, text="语言：", font=ui_font(12, "bold"))
+        self.lang_label.grid(row=1, column=0, sticky="w", padx=(15, 5), pady=(4, 10))
+        self.lang_value = ctk.CTkLabel(self.info_card, text="—", font=ui_font(12))
+        self.lang_value.grid(row=1, column=1, columnspan=3, sticky="w", padx=(0, 15), pady=(4, 10))
 
-        # ======== Manual Input Card ========
+    def _build_manual_card(self):
         self.manual_card = ctk.CTkFrame(self, corner_radius=10)
-        self.manual_card.pack(fill="x", padx=20, pady=5)
+        self.manual_card.pack(fill="x", padx=20, pady=(6, 0))
         self.manual_card.grid_columnconfigure(1, weight=1)
         self.manual_card.grid_columnconfigure(3, weight=1)
 
         self.manual_label = ctk.CTkLabel(
             self.manual_card,
-            text="附加信息（可选）",
+            text="附加信息（点击右侧列表自动填入）",
             font=ui_font(15, "bold"),
         )
-        self.manual_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=15, pady=(12, 8))
+        self.manual_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=15, pady=(10, 8))
 
         # Row 1: Group + Patch Date
         self.group_label = ctk.CTkLabel(self.manual_card, text="汉化组：", font=ui_font(12, "bold"))
-        self.group_label.grid(row=1, column=0, sticky="w", padx=(15, 5), pady=(0, 10))
+        self.group_label.grid(row=1, column=0, sticky="w", padx=(15, 5), pady=(0, 8))
         self.group_entry = ctk.CTkEntry(
             self.manual_card,
             placeholder_text="如：Makura Castle",
             textvariable=self.group_var,
             font=ui_font(12),
-            height=32,
+            height=30,
         )
-        self.group_entry.grid(row=1, column=1, sticky="ew", padx=(0, 10), pady=(0, 10))
+        self.group_entry.grid(row=1, column=1, sticky="ew", padx=(0, 10), pady=(0, 8))
 
         self.patch_date_label = ctk.CTkLabel(self.manual_card, text="汉化发布日：", font=ui_font(12, "bold"))
-        self.patch_date_label.grid(row=1, column=2, sticky="w", padx=(5, 5), pady=(0, 10))
+        self.patch_date_label.grid(row=1, column=2, sticky="w", padx=(5, 5), pady=(0, 8))
         self.patch_date_entry = ctk.CTkEntry(
             self.manual_card,
             placeholder_text="YYYYMMDD",
             textvariable=self.patch_date_var,
             font=ui_font(12),
-            height=32,
+            height=30,
         )
-        self.patch_date_entry.grid(row=1, column=3, sticky="ew", padx=(0, 15), pady=(0, 10))
+        self.patch_date_entry.grid(row=1, column=3, sticky="ew", padx=(0, 15), pady=(0, 8))
 
         # Row 2: Language
         self.language_label = ctk.CTkLabel(self.manual_card, text="语言：", font=ui_font(12, "bold"))
-        self.language_label.grid(row=2, column=0, sticky="w", padx=(15, 5), pady=(0, 12))
+        self.language_label.grid(row=2, column=0, sticky="w", padx=(15, 5), pady=(0, 10))
         self.language_entry = ctk.CTkEntry(
             self.manual_card,
             placeholder_text="如：CHS、CHT、EN",
             textvariable=self.language_var,
             font=ui_font(12),
-            height=32,
+            height=30,
         )
-        self.language_entry.grid(row=2, column=1, sticky="ew", padx=(0, 15), pady=(0, 12))
+        self.language_entry.grid(row=2, column=1, sticky="ew", padx=(0, 15), pady=(0, 10))
 
-        # ======== Preview Card ========
+    def _build_preview_card(self):
         self.preview_card = ctk.CTkFrame(self, corner_radius=10)
-        self.preview_card.pack(fill="x", padx=20, pady=(10, 5))
+        self.preview_card.pack(fill="x", padx=20, pady=(8, 0))
 
         self.preview_label = ctk.CTkLabel(
             self.preview_card,
             text="文件名预览",
             font=ui_font(15, "bold"),
         )
-        self.preview_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(12, 8))
+        self.preview_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(10, 6))
 
         self.preview_text = ctk.CTkTextbox(
             self.preview_card,
             font=ui_font(13),
-            height=50,
+            height=44,
             corner_radius=8,
             wrap="none",
         )
-        self.preview_text.grid(row=1, column=0, sticky="ew", padx=(15, 8), pady=(0, 12))
+        self.preview_text.grid(row=1, column=0, sticky="ew", padx=(15, 8), pady=(0, 10))
         self.preview_text.insert("1.0", "（等待搜索）")
         self.preview_text.configure(state="disabled")
 
@@ -259,19 +366,19 @@ class VNDBGUI(ctk.CTk):
             self.preview_card,
             text="一键复制",
             font=ui_font(13, "bold"),
-            height=40,
-            width=110,
+            height=36,
+            width=100,
             fg_color="#2b5797",
             hover_color="#1e3f6f",
             command=self.copy_filename,
         )
-        self.copy_btn.grid(row=1, column=1, sticky="ns", padx=(0, 15), pady=(0, 12))
+        self.copy_btn.grid(row=1, column=1, sticky="ns", padx=(0, 15), pady=(0, 10))
 
         self.preview_card.grid_columnconfigure(0, weight=1)
 
-        # ======== Footer ========
+    def _build_footer(self):
         self.footer_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.footer_frame.pack(fill="x", padx=20, pady=(5, 10))
+        self.footer_frame.pack(fill="x", padx=20, pady=(6, 10))
 
         self.info_label = ctk.CTkLabel(
             self.footer_frame,
@@ -291,37 +398,137 @@ class VNDBGUI(ctk.CTk):
         self.project_link_label.pack(side="right")
         self.project_link_label.bind("<Button-1>", lambda e: self.open_project_link())
 
-        self._update_preview()
+    # ── List Population ─────────────────────────────────────────────
 
-    # ======== Event Handlers ========
+    def _rebuild_nonzh_rows(self):
+        """Clear and rebuild the non-zh scrollable row list."""
+        for w in self.left_scroll.winfo_children():
+            w.destroy()
+
+        if not self._nonzh_releases:
+            lbl = ctk.CTkLabel(self.left_scroll, text="（无发行版本）",
+                               font=ui_font(12), text_color="gray50")
+            lbl.pack(pady=20)
+            return
+
+        for i, r in enumerate(self._nonzh_releases):
+            row = ReleaseRow(self.left_scroll, r, i == self._selected_nonzh_idx,
+                             self._on_nonzh_click, i, zh_mode=False)
+            row.pack(fill="x", padx=4, pady=2)
+
+    def _rebuild_zh_rows(self):
+        """Clear and rebuild the zh scrollable row list."""
+        for w in self.right_scroll.winfo_children():
+            w.destroy()
+
+        if not self._zh_releases:
+            lbl = ctk.CTkLabel(self.right_scroll, text="（无中文版本）",
+                               font=ui_font(12), text_color="gray50")
+            lbl.pack(pady=20)
+            return
+
+        for i, r in enumerate(self._zh_releases):
+            row = ReleaseRow(self.right_scroll, r, i == self._selected_zh_idx,
+                             self._on_zh_click, i, zh_mode=True)
+            row.pack(fill="x", padx=4, pady=2)
+
+    def _refresh_release_lists(self):
+        self._rebuild_nonzh_rows()
+        self._rebuild_zh_rows()
+        self.left_count.configure(text=f"共 {len(self._nonzh_releases)} 个版本")
+        self.right_count.configure(text=f"共 {len(self._zh_releases)} 个版本")
+
+        # Update info & preview based on active release
+        if self._focus_side == "nonzh" and self._nonzh_releases:
+            active = self._nonzh_releases[self._selected_nonzh_idx]
+        elif self._focus_side == "zh" and self._zh_releases:
+            active = self._zh_releases[self._selected_zh_idx]
+        else:
+            # Fallback: pick whichever has items
+            if self._nonzh_releases:
+                active = self._nonzh_releases[self._selected_nonzh_idx]
+            elif self._zh_releases:
+                active = self._zh_releases[self._selected_zh_idx]
+            else:
+                active = None
+
+        self._update_info_and_preview(active)
+
+    def _on_nonzh_click(self, idx: int):
+        self._focus_side = "nonzh"
+        self._selected_nonzh_idx = idx
+        self._refresh_release_lists()
+
+    def _on_zh_click(self, idx: int):
+        self._focus_side = "zh"
+        self._selected_zh_idx = idx
+
+        # Auto-fill Chinese patch info when selecting a zh release
+        r = self._zh_releases[idx]
+        pub = r.get_publisher_name()
+        if pub and pub != PLACEHOLDER:
+            self.group_var.set(pub)
+        patch_date = r.format_released()
+        if patch_date and patch_date != PLACEHOLDER:
+            self.patch_date_var.set(patch_date)
+        if "zh-Hans" in r.languages:
+            self.language_var.set("CHS")
+        elif "zh-Hant" in r.languages:
+            self.language_var.set("CHT")
+        elif "zh" in r.languages:
+            self.language_var.set("CHS")
+
+        self._refresh_release_lists()
+
+    def _update_info_and_preview(self, release: VNRelease | None):
+        if release:
+            self.date_value.configure(text=release.released or PLACEHOLDER)
+            self.platform_value.configure(
+                text=", ".join(release.platforms) if release.platforms else PLACEHOLDER
+            )
+            self.lang_value.configure(
+                text=", ".join(release.languages) if release.languages else PLACEHOLDER
+            )
+        else:
+            self.date_value.configure(text="—")
+            self.platform_value.configure(text="—")
+            self.lang_value.configure(text="—")
+
+        self._update_preview(release)
+
+    # ── Event Handlers ──────────────────────────────────────────────
 
     def _on_query_change(self, *args):
-        """Triggered when query text changes."""
         pass
 
-    def _on_release_change(self, *args):
-        """When release selection changes, update info display and preview."""
-        self._update_release_info()
-        self._update_preview()
-
     def _on_manual_change(self, *args):
-        """When manual fields change, update preview."""
-        self._update_preview()
+        # Auto-update preview when user manually edits fields
+        active = self._get_active_release()
+        self._update_preview(active)
 
-    # ======== API Search ========
+    def _get_active_release(self) -> VNRelease | None:
+        if self._focus_side == "nonzh" and self._nonzh_releases:
+            return self._nonzh_releases[self._selected_nonzh_idx]
+        if self._focus_side == "zh" and self._zh_releases:
+            return self._zh_releases[self._selected_zh_idx]
+        if self._nonzh_releases:
+            return self._nonzh_releases[self._selected_nonzh_idx]
+        if self._zh_releases:
+            return self._zh_releases[self._selected_zh_idx]
+        return None
+
+    # ── API Search ──────────────────────────────────────────────────
 
     def search_api(self):
         query = self.query_var.get().strip()
         if not query:
             self._set_status("请输入 VNDB ID 或游戏名称", is_error=True)
             return
-
         if self._searching:
             return
 
         self._searching = True
         self.search_btn.configure(state="disabled", text="搜索中…")
-        self.chinese_patch_btn.configure(state="disabled")
         self.status_indicator.configure(text="正在查询 VNDB API…", text_color="gray60")
 
         thread = threading.Thread(target=self._do_search, args=(query,), daemon=True)
@@ -344,291 +551,52 @@ class VNDBGUI(ctk.CTk):
 
     def _on_search_success(self, vn_info: VNInfo):
         self._vn_info = vn_info
-        self._releases = vn_info.releases
+        self._all_releases = vn_info.releases
 
-        # Populate release dropdown
-        if self._releases:
-            release_labels = []
-            for i, r in enumerate(self._releases):
-                label = get_release_preview(r)
-                release_labels.append(label)
+        self._nonzh_releases = [r for r in self._all_releases if not r.is_chinese_release()]
+        self._zh_releases = [r for r in self._all_releases if r.is_chinese_release()]
 
-            self.release_combo.configure(values=release_labels)
-            self.release_var.set(release_labels[0])
-        else:
-            self.release_combo.configure(values=["（无发行版本）"])
-            self.release_var.set("（无发行版本）")
+        # Sort by date descending (newest first)
+        self._nonzh_releases.sort(key=lambda r: r.released or "", reverse=True)
+        self._zh_releases.sort(key=lambda r: r.released or "", reverse=True)
+
+        self._selected_nonzh_idx = 0
+        self._selected_zh_idx = 0
+        self._focus_side = "zh" if self._zh_releases else "nonzh"
+
+        self._refresh_release_lists()
 
         self._searching = False
         self.search_btn.configure(state="normal", text="搜索 API")
 
-        # Enable Chinese patch button if VN has ID
-        if self._vn_info and self._vn_info.id:
-            self.chinese_patch_btn.configure(state="normal")
-        else:
-            self.chinese_patch_btn.configure(state="disabled")
-
         self.status_indicator.configure(
-            text=f"✓ 找到 {len(self._releases)} 个发行版本",
+            text=f"✓ 找到 {len(self._all_releases)} 个发行版本（非中文 {len(self._nonzh_releases)}，中文 {len(self._zh_releases)}）",
             text_color="#2b7a4b",
         )
-        self._update_release_info()
-        self._update_preview()
 
     def _on_search_error(self, error_msg: str):
         self._searching = False
         self.search_btn.configure(state="normal", text="搜索 API")
-        self.chinese_patch_btn.configure(state="disabled")
         self.status_indicator.configure(text=f"✗ {error_msg}", text_color="#d32f2f")
         self._vn_info = None
-        self._releases = []
-        self.release_combo.configure(values=["（请先搜索）"])
-        self.release_var.set("（请先搜索）")
-        self._clear_release_info()
-        self._update_preview()
+        self._all_releases = []
+        self._nonzh_releases = []
+        self._zh_releases = []
+        self._refresh_release_lists()
 
-    # ======== Chinese Patch Auto-Fill ========
+    # ── Preview ─────────────────────────────────────────────────────
 
-    def auto_fill_chinese_patch(self):
-        """Search for Chinese patch releases and show selection dialog."""
-        if not self._vn_info or not self._vn_info.id:
-            return
+    def _update_preview(self, release: VNRelease | None = None):
+        if release is None and self._vn_info:
+            release = self._get_active_release()
 
-        self.status_indicator.configure(text="正在查找汉化版…", text_color="gray60")
-
-        thread = threading.Thread(target=self._do_chinese_patch_search, daemon=True)
-        thread.start()
-
-    def _do_chinese_patch_search(self):
-        try:
-            chinese_releases = self.api_client.get_chinese_patch_releases(self._vn_info.id)
-        except Exception as e:
-            self.after(0, lambda: self._set_status(f"查找汉化版失败：{e}", is_error=True))
-            return
-
-        self.after(0, lambda: self._on_chinese_patch_found(chinese_releases))
-
-    def _on_chinese_patch_found(self, chinese_releases: list[VNRelease]):
-        if not chinese_releases:
-            self._set_status("未找到任何汉化发行版本", is_error=True)
-            return
-
-        # Sort by release date descending (newest first)
-        chinese_releases.sort(key=lambda r: r.released or "", reverse=True)
-
-        # Show selection dialog
-        self._show_chinese_patch_dialog(chinese_releases)
-
-    def _show_chinese_patch_dialog(self, releases: list[VNRelease]):
-        """Show a popup dialog to let the user choose a Chinese release."""
-
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("选择汉化版本")
-        dialog.geometry("680x420")
-        dialog.resizable(True, True)
-        dialog.transient(self)
-        dialog.grab_set()
-
-        # Center on parent
-        dialog.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() - 680) // 2
-        y = self.winfo_y() + (self.winfo_height() - 420) // 2
-        dialog.geometry(f"+{x}+{y}")
-
-        # Header
-        header = ctk.CTkLabel(
-            dialog,
-            text=f"共找到 {len(releases)} 个汉化版本，请选择一项：",
-            font=ui_font(14, "bold"),
-            anchor="w",
-        )
-        header.pack(fill="x", padx=20, pady=(15, 5))
-
-        # Scrollable frame for release list
-        scroll_frame = ctk.CTkScrollableFrame(dialog, corner_radius=8)
-        scroll_frame.pack(fill="both", expand=True, padx=20, pady=10)
-
-        selected_var = ctk.StringVar(value=releases[0].id)
-
-        for r in releases:
-            pub = r.get_publisher_name()
-            pub_text = pub if pub != PLACEHOLDER else "（未知汉化组）"
-            date_text = r.released if r.released else "（日期未知）"
-            lang_text = "简体中文" if "zh-Hans" in r.languages else "繁体中文" if "zh-Hant" in r.languages else "中文"
-
-            # Card frame
-            card = ctk.CTkFrame(scroll_frame, corner_radius=8, border_width=1, border_color="#333333")
-            card.pack(fill="x", padx=5, pady=4)
-
-            # Radio button
-            radio = ctk.CTkRadioButton(
-                card,
-                text="",
-                variable=selected_var,
-                value=r.id,
-                font=ui_font(13),
-            )
-            radio.grid(row=0, column=0, rowspan=3, padx=(10, 5), pady=8)
-
-            # Info
-            title_label = ctk.CTkLabel(
-                card,
-                text=f"📅 {date_text}  |  {lang_text}",
-                font=ui_font(13, "bold"),
-                anchor="w",
-            )
-            title_label.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(6, 0))
-
-            group_label = ctk.CTkLabel(
-                card,
-                text=f"🏢 {pub_text}",
-                font=ui_font(12),
-                text_color="gray70",
-                anchor="w",
-            )
-            group_label.grid(row=1, column=1, sticky="w", padx=(0, 10), pady=(0, 2))
-
-            subtitle_label = ctk.CTkLabel(
-                card,
-                text=f"📖 {r.title}",
-                font=ui_font(11),
-                text_color="gray50",
-                anchor="w",
-            )
-            subtitle_label.grid(row=2, column=1, sticky="w", padx=(0, 10), pady=(0, 6))
-
-            card.grid_columnconfigure(1, weight=1)
-
-        # Buttons
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=(5, 15))
-
-        cancel_btn = ctk.CTkButton(
-            btn_frame,
-            text="取消",
-            font=ui_font(13),
-            width=100,
-            fg_color="#555555",
-            hover_color="#444444",
-            command=dialog.destroy,
-        )
-        cancel_btn.pack(side="right", padx=(10, 0))
-
-        confirm_btn = ctk.CTkButton(
-            btn_frame,
-            text="确认选择",
-            font=ui_font(13, "bold"),
-            width=120,
-            fg_color="#2b7a4b",
-            hover_color="#1e5f38",
-            command=lambda: self._apply_chinese_patch(releases, selected_var.get(), dialog),
-        )
-        confirm_btn.pack(side="right")
-
-    def _apply_chinese_patch(
-        self,
-        releases: list[VNRelease],
-        selected_id: str,
-        dialog: ctk.CTkToplevel | None = None,
-    ):
-        """Apply the selected Chinese release info to the form."""
-        # Find the selected release
-        target = None
-        for r in releases:
-            if r.id == selected_id:
-                target = r
-                break
-        if not target:
-            return
-
-        # Auto-fill fields
-        publisher = target.get_publisher_name()
-        if publisher and publisher != PLACEHOLDER:
-            self.group_var.set(publisher)
-
-        patch_date = target.format_released()
-        if patch_date and patch_date != PLACEHOLDER:
-            self.patch_date_var.set(patch_date)
-
-        if "zh-Hans" in target.languages:
-            self.language_var.set("CHS")
-        elif "zh-Hant" in target.languages:
-            self.language_var.set("CHT")
-        elif "zh" in target.languages:
-            self.language_var.set("CHS")
-
-        # Try to select matching release in dropdown
-        matched_in_list = False
-        for r in self._releases:
-            if r.id == target.id and get_release_preview(r):
-                self.release_var.set(get_release_preview(r))
-                matched_in_list = True
-                break
-
-        if dialog:
-            dialog.destroy()
-
-        msg = f"✓ 已填入汉化版信息（{target.released or '日期未知'} - {publisher if publisher != PLACEHOLDER else '未知组'}）"
-        self.status_indicator.configure(text=msg, text_color="#2b7a4b")
-
-    # ======== Release Info Display ========
-
-    def _update_release_info(self):
-        if not self._vn_info or not self._releases:
-            self._clear_release_info()
-            return
-
-        selected_idx = self._get_selected_release_index()
-        if selected_idx is None:
-            self._clear_release_info()
-            return
-
-        release = self._releases[selected_idx]
-        developer = release.get_developer_name()
-        self.dev_value.configure(text=developer)
-        self.date_value.configure(text=release.released or PLACEHOLDER)
-        self.platform_value.configure(
-            text=", ".join(release.platforms) if release.platforms else PLACEHOLDER
-        )
-        self.lang_info_value.configure(
-            text=", ".join(release.languages) if release.languages else PLACEHOLDER
-        )
-
-    def _clear_release_info(self):
-        self.dev_value.configure(text="—")
-        self.date_value.configure(text="—")
-        self.platform_value.configure(text="—")
-        self.lang_info_value.configure(text="—")
-
-    def _get_selected_release_index(self) -> int | None:
-        """Get the index of the currently selected release."""
-        if not self._releases:
-            return None
-        selected = self.release_var.get()
-        for i, r in enumerate(self._releases):
-            if get_release_preview(r) == selected:
-                return i
-        return None
-
-    # ======== Preview ========
-
-    def _update_preview(self):
-        if not self._vn_info or not self._releases:
+        if not release or not self._vn_info:
             self.preview_text.configure(state="normal")
             self.preview_text.delete("1.0", "end")
             self.preview_text.insert("1.0", "（等待搜索）")
             self.preview_text.configure(state="disabled")
             return
 
-        selected_idx = self._get_selected_release_index()
-        if selected_idx is None:
-            self.preview_text.configure(state="normal")
-            self.preview_text.delete("1.0", "end")
-            self.preview_text.insert("1.0", "（请选择发行版本）")
-            self.preview_text.configure(state="disabled")
-            return
-
-        release = self._releases[selected_idx]
         filename = generate_filename(
             self._vn_info,
             release,
@@ -644,16 +612,16 @@ class VNDBGUI(ctk.CTk):
 
     def copy_filename(self):
         content = self.preview_text.get("1.0", "end-1c")
-        if content and content != "（等待搜索）" and content != "（请选择发行版本）":
+        if content and content not in ("（等待搜索）", "（请选择发行版本）"):
             self.clipboard_clear()
             self.clipboard_append(content)
             self.status_indicator.configure(text="✓ 已复制到剪贴板", text_color="#2b7a4b")
             self.after(3000, lambda: self._reset_status_text())
 
     def _reset_status_text(self):
-        if self._vn_info and self._releases:
+        if self._vn_info and self._all_releases:
             self.status_indicator.configure(
-                text=f"✓ 找到 {len(self._releases)} 个发行版本",
+                text=f"✓ 找到 {len(self._all_releases)} 个发行版本",
                 text_color="#2b7a4b",
             )
         else:
