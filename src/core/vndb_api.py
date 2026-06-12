@@ -16,6 +16,10 @@ VN_FIELDS = (
     "image{url,dims,sexual,violence,votecount}"
 )
 
+VN_CANDIDATE_FIELDS = (
+    "id, title, alttitle, titles{lang, title, latin}"
+)
+
 RELEASE_FIELDS = (
     "id, title, alttitle, released, platforms, "
     "languages{lang}, producers{id, name, original, developer, publisher}, "
@@ -47,7 +51,6 @@ PLATFORM_MAP: dict[str, str] = {
     "ps4": "PlayStation 4",
     "psv": "PlayStation Vita",
     "psp": "PlayStation Portable",
-
 }
 
 # ── Data classes ──────────────────────────────────────────────────────
@@ -76,6 +79,31 @@ class Producer:
         if self.original:
             return self.original
         return self.name
+
+
+@dataclass
+class VNCandidate:
+    """Lightweight VN info for search result listing."""
+    id: str
+    title: str
+    alttitle: str | None = None
+    titles: list[dict] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "VNCandidate":
+        return cls(
+            id=d.get("id", ""),
+            title=d.get("title", ""),
+            alttitle=d.get("alttitle"),
+            titles=d.get("titles", []) or [],
+        )
+
+    def get_display_title(self) -> str:
+        """Try to get original (Japanese) title, fallback to alttitle, then title."""
+        for t in self.titles:
+            if isinstance(t, dict) and t.get("lang") == "ja":
+                return t.get("title", "")
+        return self.alttitle or self.title
 
 
 @dataclass
@@ -200,17 +228,22 @@ class VNInfo:
 
 class VNDBError(Exception):
     """Base exception for VNDB API errors."""
-
     pass
 
 
 class VNDBNotFoundError(VNDBError):
     """VN not found."""
-
     pass
 
 
-# ── Client ────────────────────────────────────────────────────────────
+class VNDBMultipleResultsError(VNDBError):
+    """Multiple VNs found for a title search; candidates are stored."""
+    def __init__(self, message: str, candidates: list[VNCandidate]):
+        super().__init__(message)
+        self.candidates = candidates
+
+
+# ── Client ──────────────────────────────────────────────────────────────
 
 
 class VNDBAPIClient:
@@ -224,7 +257,7 @@ class VNDBAPIClient:
         })
         self.timeout = timeout
 
-    # ── low-level helpers ──────────────────────────────────────────
+    # ── low-level helpers ────────────────────────────────────────────────
 
     def _post(self, endpoint: str, payload: dict) -> dict:
         url = f"{API_BASE}/{endpoint}"
@@ -267,7 +300,7 @@ class VNDBAPIClient:
             page += 1
         return results
 
-    # ── VN search ─────────────────────────────────────────────────
+    # ── VN search ──────────────────────────────────────────────────────
 
     def search_vn_by_id(self, vn_id: str) -> VNInfo:
         normalized = vn_id.strip().lower()
@@ -291,23 +324,28 @@ class VNDBAPIClient:
 
         return VNInfo.from_dict(raw_vn)
 
-    def search_vn_by_title(self, title: str) -> VNInfo:
+    def search_vn_candidates(self, title: str) -> list[VNCandidate]:
+        """Search VN by title and return all candidates, without fetching releases."""
         payload: dict[str, Any] = {
             "filters": ["search", "=", title],
-            "fields": VN_FIELDS,
+            "fields": VN_CANDIDATE_FIELDS,
             "results": 10,
         }
         data = self._post("vn", payload)
         results = data.get("results", [])
         if not results:
             raise VNDBNotFoundError(f"未找到标题包含「{title}」的视觉小说。")
+        return [VNCandidate.from_dict(r) for r in results]
 
-        raw_vn = results[0]
+    def search_vn_by_title(self, title: str) -> VNInfo:
+        candidates = self.search_vn_candidates(title)
+        if len(candidates) > 1:
+            raise VNDBMultipleResultsError(
+                f"找到多个匹配结果，请选择一个。",
+                candidates,
+            )
 
-        # Always fetch releases separately
-        releases = self._fetch_releases(raw_vn["id"])
-        raw_vn["releases"] = releases
-
+        raw_vn = self._fetch_vn_by_id(candidates[0].id)
         return VNInfo.from_dict(raw_vn)
 
     def search_vn(self, query: str) -> VNInfo:
@@ -318,7 +356,47 @@ class VNDBAPIClient:
             return self.search_vn_by_id(query)
         return self.search_vn_by_title(query)
 
-    # ── Release fetching ──────────────────────────────────────────
+    def fetch_vn_by_id(self, vn_id: str) -> VNInfo:
+        """Fetch full VNInfo (with releases) for a given vn ID."""
+        normalized = vn_id.strip().lower()
+        if not normalized.startswith("v"):
+            normalized = f"v{normalized}"
+
+        payload: dict[str, Any] = {
+            "filters": ["id", "=", normalized],
+            "fields": VN_FIELDS,
+        }
+        data = self._post("vn", payload)
+        results = data.get("results", [])
+        if not results:
+            raise VNDBNotFoundError(f"未找到 ID 为 {normalized} 的视觉小说。")
+
+        raw_vn = results[0]
+        releases = self._fetch_releases(normalized)
+        raw_vn["releases"] = releases
+        return VNInfo.from_dict(raw_vn)
+
+    def _fetch_vn_by_id(self, vn_id: str) -> dict:
+        """Internal helper: fetch raw VN data by ID (without exception wrapping)."""
+        normalized = vn_id.strip().lower()
+        if not normalized.startswith("v"):
+            normalized = f"v{normalized}"
+
+        payload: dict[str, Any] = {
+            "filters": ["id", "=", normalized],
+            "fields": VN_FIELDS,
+        }
+        data = self._post("vn", payload)
+        results = data.get("results", [])
+        if not results:
+            raise VNDBNotFoundError(f"未找到 ID 为 {normalized} 的视觉小说。")
+
+        raw_vn = results[0]
+        releases = self._fetch_releases(normalized)
+        raw_vn["releases"] = releases
+        return raw_vn
+
+    # ── Release fetching ───────────────────────────────────────────────
 
     def _fetch_releases(self, vn_id: str) -> list[dict]:
         payload: dict[str, Any] = {
@@ -328,7 +406,7 @@ class VNDBAPIClient:
         }
         return self._fetch_all_results("release", payload, max_pages=5)
 
-    # ── Chinese patch helper ──────────────────────────────────────
+    # ── Chinese patch helper ──────────────────────────────────────────
 
     def get_chinese_patch_releases(self, vn_id: str) -> list[VNRelease]:
         """Find releases that have Chinese language support."""

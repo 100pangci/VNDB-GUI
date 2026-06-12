@@ -10,7 +10,16 @@ import webbrowser
 import customtkinter as ctk
 
 from app_version import get_app_version
-from core.vndb_api import VNDBAPIClient, VNDBError, VNDBNotFoundError, VNInfo, VNRelease, PLACEHOLDER
+from core.vndb_api import (
+    VNDBAPIClient,
+    VNDBError,
+    VNDBNotFoundError,
+    VNDBMultipleResultsError,
+    VNCandidate,
+    VNInfo,
+    VNRelease,
+    PLACEHOLDER,
+)
 from core.filename_generator import generate_filename, get_release_preview, sanitize_filename
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,12 +35,103 @@ COLOR_ZH_BG = "#3a2010"
 COLOR_ZH_BORDER = "#5a3020"
 
 
-def ui_font(size=12, weight="normal"):
+def ui_font(size=12, weight: str = "normal"):
     return ctk.CTkFont(family=UI_FONT_FAMILY, size=size, weight=weight)
 
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
+
+
+class CandidateDialog(ctk.CTkToplevel):
+    """Modal dialog to let the user pick from multiple VN search results."""
+
+    def __init__(self, parent, candidates: list[VNCandidate]):
+        super().__init__(parent)
+        self.title("选择视觉小说")
+        self.geometry("600x420")
+        self.minsize(400, 300)
+        self.transient(parent)
+        self.grab_set()
+
+        self._candidates = candidates
+        self._selected: VNCandidate | None = None
+
+        self._build_ui()
+
+        # Center on parent
+        self.after(100, self._center_on_parent)
+
+    def _center_on_parent(self):
+        self.update_idletasks()
+        pw = self.master.winfo_width()
+        ph = self.master.winfo_height()
+        px = self.master.winfo_x()
+        py = self.master.winfo_y()
+        w = self.winfo_width()
+        h = self.winfo_height()
+        x = px + (pw - w) // 2
+        y = py + (ph - h) // 2
+        self.geometry(f"+{x}+{y}")
+
+    def _build_ui(self):
+        # Instruction
+        ctk.CTkLabel(
+            self,
+            text="找到多个匹配结果，请选择一个：",
+            font=ui_font(14, "bold"),
+        ).pack(anchor="w", padx=20, pady=(16, 6))
+
+        # Scrollable list
+        self.list_frame = ctk.CTkScrollableFrame(self, corner_radius=8)
+        self.list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 12))
+
+        for idx, cand in enumerate(self._candidates):
+            display = cand.get_display_title()
+            extra = cand.alttitle or cand.title
+            if extra and extra != display:
+                text = f"{display}  ({extra})"
+            else:
+                text = display
+            text += f"  [{cand.id}]"
+
+            btn = ctk.CTkButton(
+                self.list_frame,
+                text=text,
+                font=ui_font(12),
+                anchor="w",
+                height=32,
+                fg_color="transparent",
+                hover_color="#2a3d5a",
+                text_color="white",
+                command=lambda c=cand: self._on_select(c),
+            )
+            btn.pack(fill="x", padx=4, pady=2)
+
+        # Cancel button
+        self.cancel_btn = ctk.CTkButton(
+            self,
+            text="取消",
+            font=ui_font(13),
+            fg_color="#555555",
+            hover_color="#444444",
+            width=100,
+            command=self._on_cancel,
+        )
+        self.cancel_btn.pack(pady=(0, 14))
+
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+    def _on_select(self, cand: VNCandidate):
+        self._selected = cand
+        self.destroy()
+
+    def _on_cancel(self):
+        self._selected = None
+        self.destroy()
+
+    def get_selected(self) -> VNCandidate | None:
+        return self._selected
 
 
 class ReleaseRow(ctk.CTkFrame):
@@ -536,14 +636,66 @@ class VNDBGUI(ctk.CTk):
     def _do_search(self, query: str):
         try:
             vn_info = self.api_client.search_vn(query)
+        except VNDBMultipleResultsError as e:
+            # Capture immediately to avoid Python closure late-binding issue
+            err_msg = str(e)
+            candidates = e.candidates
+            self.after(0, lambda: self._on_multiple_candidates(err_msg, candidates))
+            return
         except VNDBNotFoundError as e:
-            self.after(0, lambda: self._on_search_error(str(e)))
+            err_msg = str(e)
+            self.after(0, lambda err_msg=err_msg: self._on_search_error(err_msg))
             return
         except VNDBError as e:
-            self.after(0, lambda: self._on_search_error(str(e)))
+            err_msg = str(e)
+            self.after(0, lambda err_msg=err_msg: self._on_search_error(err_msg))
             return
         except Exception as e:
-            self.after(0, lambda: self._on_search_error(f"未知错误：{e}"))
+            err_msg = f"未知错误：{e}"
+            self.after(0, lambda err_msg=err_msg: self._on_search_error(err_msg))
+            return
+
+        self.after(0, lambda: self._on_search_success(vn_info))
+
+    def _on_multiple_candidates(self, message: str, candidates: list[VNCandidate]):
+        """Show a dialog for the user to pick from multiple candidates."""
+        dialog = CandidateDialog(self, candidates)
+        self.wait_window(dialog)
+        selected = dialog.get_selected()
+        if selected is None:
+            # User cancelled
+            self._searching = False
+            self.search_btn.configure(state="normal", text="搜索 API")
+            self.status_indicator.configure(text="已取消选择", text_color="gray60")
+            return
+
+        # Fetch the selected VN
+        self.status_indicator.configure(
+            text=f"正在获取 {selected.id}…",
+            text_color="gray60",
+        )
+        thread = threading.Thread(
+            target=self._do_fetch_selected,
+            args=(selected.id,),
+            daemon=True,
+        )
+        thread.start()
+
+    def _do_fetch_selected(self, vn_id: str):
+        """Fetch full VN info after user selects from candidates."""
+        try:
+            vn_info = self.api_client.fetch_vn_by_id(vn_id)
+        except VNDBNotFoundError as e:
+            err_msg = str(e)
+            self.after(0, lambda err_msg=err_msg: self._on_search_error(err_msg))
+            return
+        except VNDBError as e:
+            err_msg = str(e)
+            self.after(0, lambda err_msg=err_msg: self._on_search_error(err_msg))
+            return
+        except Exception as e:
+            err_msg = f"未知错误：{e}"
+            self.after(0, lambda err_msg=err_msg: self._on_search_error(err_msg))
             return
 
         self.after(0, lambda: self._on_search_success(vn_info))
