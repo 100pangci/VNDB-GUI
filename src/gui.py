@@ -239,7 +239,7 @@ class VNDBGUI(ctk.CTk):
         self.left_frame.grid_columnconfigure(0, weight=1)
 
         self.left_header = ctk.CTkLabel(
-            self.left_frame, text="原版发行",
+            self.left_frame, text="非中文发行",
             font=ui_font(13, "bold"),
             fg_color="#2a2a2a", corner_radius=6,
         )
@@ -265,7 +265,7 @@ class VNDBGUI(ctk.CTk):
         self.right_frame.grid_columnconfigure(0, weight=1)
 
         self.right_header = ctk.CTkLabel(
-            self.right_frame, text="汉化版",
+            self.right_frame, text="中文发行",
             font=ui_font(13, "bold"),
             fg_color=COLOR_ZH_BG, corner_radius=6,
         )
@@ -290,7 +290,7 @@ class VNDBGUI(ctk.CTk):
 
         self.manual_label = ctk.CTkLabel(
             self.manual_card,
-            text="附加信息（点击汉化版列表自动填入）",
+            text="附加信息（点击中文发行列表自动填入）",
             font=ui_font(15, "bold"),
         )
         self.manual_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(10, 8))
@@ -300,7 +300,7 @@ class VNDBGUI(ctk.CTk):
         self.group_label.grid(row=1, column=0, sticky="w", padx=(15, 5), pady=(0, 10))
         self.group_entry = ctk.CTkEntry(
             self.manual_card,
-            placeholder_text="如：Makura Castle（点击汉化版自动填入）",
+            placeholder_text="如：Makura Castle（点击中文发行列表自动填入）",
             textvariable=self.group_var,
             font=ui_font(12),
             height=30,
@@ -412,7 +412,13 @@ class VNDBGUI(ctk.CTk):
     def _on_nonzh_click(self, idx: int):
         self._focus_side = "nonzh"
         self._selected_nonzh_idx = idx
-        self._refresh_release_lists()
+        # Update selection on both sides without any widget destruction/rebuild
+        self._update_selection_on_side("nonzh")
+        self._update_selection_on_side("zh")
+        self.left_count.configure(text=f"共 {len(self._nonzh_releases)} 个版本")
+        self.right_count.configure(text=f"共 {len(self._zh_releases)} 个版本")
+        active = self._get_active_release()
+        self._update_preview(active)
 
     def _on_zh_click(self, idx: int):
         self._focus_side = "zh"
@@ -433,7 +439,21 @@ class VNDBGUI(ctk.CTk):
         elif "zh" in r.languages:
             self._language = "CHS"
 
-        self._refresh_release_lists()
+        # Update selection on both sides without any widget destruction/rebuild
+        self._update_selection_on_side("nonzh")
+        self._update_selection_on_side("zh")
+        self.left_count.configure(text=f"共 {len(self._nonzh_releases)} 个版本")
+        self.right_count.configure(text=f"共 {len(self._zh_releases)} 个版本")
+        active = self._get_active_release()
+        self._update_preview(active)
+
+    def _update_selection_on_side(self, side: str):
+        """Update selection visuals on existing rows without destroying/recreating widgets."""
+        scroll = self.left_scroll if side == "nonzh" else self.right_scroll
+        selected_idx = self._selected_nonzh_idx if side == "nonzh" else self._selected_zh_idx
+        for child in scroll.winfo_children():
+            if isinstance(child, ReleaseRow):
+                child.set_selected(child.row_index == selected_idx)
 
     # ── Event Handlers ──────────────────────────────────────────────
 
