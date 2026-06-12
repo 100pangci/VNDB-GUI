@@ -55,11 +55,10 @@ def generate_filename(
     # --- Original title ---
     original_title = vn_info.get_original_title()
 
-    # --- Platform ---
-    platform_str = ""
-    platforms = release.platforms
-    if platforms:
-        platform_str = "_".join(platforms)
+    # --- Platform (use full names from display) ---
+    plat_display = release.get_platforms_display()
+    if plat_display and plat_display != PLACEHOLDER:
+        platform_str = plat_display.replace(", ", "_")
     else:
         platform_str = PLACEHOLDER
 

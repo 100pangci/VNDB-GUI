@@ -18,12 +18,28 @@ VN_FIELDS = (
 
 RELEASE_FIELDS = (
     "id, title, alttitle, released, platforms, "
-    "languages{lang}, producers{id, name, developer, publisher}, "
+    "languages{lang}, producers{id, name, original, developer, publisher}, "
     "media{medium, qty}, extlinks{url, label}"
 )
 
 PLACEHOLDER = "NO DATA"
 
+# VNDB platform code → full name mapping
+PLATFORM_MAP: dict[str, str] = {
+    "win": "Windows",
+    "lin": "Linux",
+    "mac": "MacOS",
+    "and": "Android",
+    "ios": "iOS",
+    "dvd": "DVD",
+    "bdp": "Blu-ray Player",
+    "dos": "DOS",
+    "win3x": "Windows 3.x",
+    "win9x": "Windows 9x",
+    "winnt": "Windows NT",
+    "web": "Web",
+    "oth": "Other",
+}
 
 # ── Data classes ──────────────────────────────────────────────────────
 
@@ -32,6 +48,7 @@ PLACEHOLDER = "NO DATA"
 class Producer:
     id: str
     name: str
+    original: str = ""
     developer: bool = False
     publisher: bool = False
 
@@ -40,9 +57,16 @@ class Producer:
         return cls(
             id=d.get("id", ""),
             name=d.get("name", PLACEHOLDER),
+            original=d.get("original", ""),
             developer=d.get("developer", False),
             publisher=d.get("publisher", False),
         )
+
+    def get_display_name(self) -> str:
+        """Return original (Japanese) name if available, else romanized name."""
+        if self.original:
+            return self.original
+        return self.name
 
 
 @dataclass
@@ -89,21 +113,44 @@ class VNRelease:
             return self.alttitle
         return self.title
 
+    def get_platforms_display(self) -> str:
+        """Return platform names with full names (e.g. win→Windows)."""
+        if not self.platforms:
+            return PLACEHOLDER
+        names = [PLATFORM_MAP.get(p, p) for p in self.platforms]
+        return ", ".join(names)
+
     def get_developer_name(self) -> str:
-        """Return developer name, or PLACEHOLDER."""
+        """Return developer name (original Japanese if available), or PLACEHOLDER."""
         for p in self.producers:
             if p.developer:
-                return p.name or PLACEHOLDER
+                return p.get_display_name() or PLACEHOLDER
         if self.producers:
-            return self.producers[0].name or PLACEHOLDER
+            return self.producers[0].get_display_name() or PLACEHOLDER
         return PLACEHOLDER
 
     def get_publisher_name(self) -> str:
-        """Return publisher name, or PLACEHOLDER."""
+        """Return publisher name (original Japanese if available), or PLACEHOLDER."""
         for p in self.producers:
             if p.publisher:
-                return p.name or PLACEHOLDER
+                return p.get_display_name() or PLACEHOLDER
         return PLACEHOLDER
+
+    def get_non_developer_group_name(self) -> str:
+        """Return the first producer that is NOT the developer (for Chinese patch groups)."""
+        dev_name = self.get_developer_name()
+        for p in self.producers:
+            pn = p.get_display_name()
+            if pn != dev_name and pn != PLACEHOLDER:
+                return pn
+        return PLACEHOLDER
+
+    def get_languages_display(self) -> str:
+        """Return languages string with Japanese (ja) first if present."""
+        if not self.languages:
+            return PLACEHOLDER
+        sorted_langs = sorted(self.languages, key=lambda x: (x != "ja", x))
+        return ", ".join(sorted_langs)
 
     def is_chinese_release(self) -> bool:
         """Check if this release has Chinese language."""
