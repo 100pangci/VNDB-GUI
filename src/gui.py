@@ -153,11 +153,11 @@ class ReleaseRow(ctk.CTkFrame):
         self.indicator = ctk.CTkLabel(self, text="", width=4, corner_radius=2)
         self.indicator.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(4, 2))
 
-        # Title
+        # Title — no wraplength to avoid layout recalculation on resize
         display = release.get_display_title()
         self.title_lbl = ctk.CTkLabel(
             self, text=display, font=ui_font(12, "bold"),
-            anchor="w", wraplength=280,
+            anchor="w", wraplength=0,
         )
         self.title_lbl.grid(row=0, column=1, sticky="w", padx=(4, 8), pady=(4, 0))
 
@@ -191,29 +191,11 @@ class ReleaseRow(ctk.CTkFrame):
 
         self._apply_selection()
 
-        # Bind click on entire card
-        for widget in (self, self.indicator, self.title_lbl, self.info_lbl):
-            widget.bind("<Button-1>", self._handle_click)
-            widget.bind("<Enter>", lambda e: self.configure(fg_color="#2a2a2a")
-                        if not self.is_selected else None)
-            widget.bind("<Leave>", lambda e: self.configure(fg_color="transparent")
-                        if not self.is_selected else None)
-
-        # Also bind mouse wheel to propagate to parent scroll frame
-        self.bind("<MouseWheel>", self._propagate_wheel)
+        # Bind click only on the row frame itself (single binding, not per-child)
+        self.bind("<Button-1>", self._handle_click)
+        self.indicator.bind("<Button-1>", self._handle_click)
 
         self.grid_columnconfigure(1, weight=1)
-
-    @staticmethod
-    def _propagate_wheel(event):
-        """Forward mouse wheel event to the parent scrollable frame."""
-        # Walk up to find the CTkScrollableFrame parent
-        widget = event.widget
-        while widget:
-            if isinstance(widget, ctk.CTkScrollableFrame):
-                widget._parent_canvas.yview_scroll(int(-9 * (event.delta / 120)), "units")
-                return
-            widget = widget.master
 
     def _handle_click(self, event):
         self._on_click(self.row_index)

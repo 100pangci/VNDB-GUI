@@ -46,8 +46,8 @@ def generate_filename(
     """
     # --- Developer ---
     developer = release.get_developer_name()
-    if not developer or developer == PLACEHOLDER:
-        developer = vn_info.title  # fallback
+    if not developer:
+        developer = PLACEHOLDER  # use NO DATA placeholder instead of falling back to title
 
     # --- Release date (YYYYMMDD) ---
     date_str = release.format_released()
