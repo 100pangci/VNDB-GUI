@@ -135,13 +135,16 @@ class CandidateDialog(ctk.CTkToplevel):
 
 
 class ReleaseRow(ctk.CTkFrame):
-    """A single clickable row in a release list."""
+    """A single clickable row in a release list.
+
+    No border_width is used — CTkFrame's Canvas borders have rendering bugs
+    on Windows with DPI scaling. Visual row separation is achieved via
+    parent scrollable frame's background showing through the pady gap.
+    """
 
     def __init__(self, master, release: VNRelease, is_selected: bool,
                  on_click, row_index: int, zh_mode: bool = False, **kwargs):
-        border = COLOR_ZH_BORDER if zh_mode else COLOR_BORDER
-        super().__init__(master, corner_radius=6, border_width=1,
-                         border_color=border, **kwargs)
+        super().__init__(master, corner_radius=6, border_width=0, **kwargs)
 
         self.release = release
         self.row_index = row_index
@@ -149,21 +152,22 @@ class ReleaseRow(ctk.CTkFrame):
         self._on_click = on_click
         self.zh_mode = zh_mode
 
-        # Selection indicator
+        self.grid_columnconfigure(1, weight=1)
+
+        # Selection indicator — fixed width, left side
         self.indicator = ctk.CTkLabel(self, text="", width=4, corner_radius=2)
         self.indicator.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(4, 2))
 
-        # Title — no wraplength to avoid layout recalculation on resize
+        # Title
         display = release.get_display_title()
         self.title_lbl = ctk.CTkLabel(
             self, text=display, font=ui_font(12, "bold"),
-            anchor="w", wraplength=0,
+            anchor="w",
         )
-        self.title_lbl.grid(row=0, column=1, sticky="w", padx=(4, 8), pady=(4, 0))
+        self.title_lbl.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=(4, 0))
 
         # Info line: depends on zh_mode
         if zh_mode:
-            # Chinese release: show group name + date
             group = release.get_non_developer_group_name()
             if group and group != PLACEHOLDER:
                 info = group
@@ -172,7 +176,6 @@ class ReleaseRow(ctk.CTkFrame):
             date_str = release.released or "????-??-??"
             info += f"  |  {date_str}"
         else:
-            # Non-Chinese release: show developer + date + platform + languages
             dev = release.get_developer_name()
             if dev and dev != PLACEHOLDER:
                 info = dev
@@ -187,15 +190,15 @@ class ReleaseRow(ctk.CTkFrame):
             self, text=info, font=ui_font(11),
             text_color="gray60", anchor="w",
         )
-        self.info_lbl.grid(row=1, column=1, sticky="w", padx=(4, 8), pady=(0, 4))
+        self.info_lbl.grid(row=1, column=1, sticky="ew", padx=(4, 8), pady=(0, 4))
 
         self._apply_selection()
 
-        # Bind click only on the row frame itself (single binding, not per-child)
+        # Click handling: bind on self + all major children
         self.bind("<Button-1>", self._handle_click)
         self.indicator.bind("<Button-1>", self._handle_click)
-
-        self.grid_columnconfigure(1, weight=1)
+        self.title_lbl.bind("<Button-1>", self._handle_click, add=True)
+        self.info_lbl.bind("<Button-1>", self._handle_click, add=True)
 
     def _handle_click(self, event):
         self._on_click(self.row_index)
@@ -209,7 +212,9 @@ class ReleaseRow(ctk.CTkFrame):
             self.configure(fg_color="#2a3d5a")
             self.indicator.configure(text="▌", text_color=COLOR_ACTIVE, font=ui_font(14))
         else:
-            self.configure(fg_color="transparent")
+            # Slightly lighter than scroll frame bg (#1e1e1e) — pady gap
+            # exposes scroll frame's darker bg as row separator.
+            self.configure(fg_color="#282828")
             self.indicator.configure(text="", font=ui_font(14))
 
 
@@ -323,7 +328,7 @@ class VNDBGUI(ctk.CTk):
         self.panel_frame = ctk.CTkFrame(self, corner_radius=10)
         self.panel_frame.pack(fill="both", expand=True, padx=20, pady=(8, 0))
         self.panel_frame.grid_columnconfigure(0, weight=1)
-        self.panel_frame.grid_columnconfigure(1, weight=1)
+        self.panel_frame.grid_columnconfigure(2, weight=1)
         self.panel_frame.grid_rowconfigure(1, weight=1)
 
         header = ctk.CTkLabel(
@@ -331,12 +336,19 @@ class VNDBGUI(ctk.CTk):
             text="选择发行版本",
             font=ui_font(15, "bold"),
         )
-        header.grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(10, 6))
+        header.grid(row=0, column=0, columnspan=3, sticky="w", padx=15, pady=(10, 6))
+
+        # ── Vertical divider ──
+        self.panel_divider = ctk.CTkFrame(
+            self.panel_frame, width=2, corner_radius=0,
+            fg_color=COLOR_BORDER,
+        )
+        self.panel_divider.grid(row=1, column=1, sticky="ns", padx=0, pady=(0, 10))
 
         # ── Left: Non-Chinese ──
         self.left_frame = ctk.CTkFrame(self.panel_frame, corner_radius=8,
                                        border_width=1, border_color=COLOR_BORDER)
-        self.left_frame.grid(row=1, column=0, sticky="nsew", padx=(15, 6), pady=(0, 10))
+        self.left_frame.grid(row=1, column=0, sticky="nsew", padx=(15, 8), pady=(0, 10))
         self.left_frame.grid_rowconfigure(2, weight=1)
         self.left_frame.grid_columnconfigure(0, weight=1)
 
@@ -350,6 +362,7 @@ class VNDBGUI(ctk.CTk):
         self.left_scroll = ctk.CTkScrollableFrame(
             self.left_frame, corner_radius=6,
             border_width=0,
+            fg_color="#1e1e1e",
         )
         self.left_scroll.grid(row=2, column=0, sticky="nsew", padx=4, pady=2)
         self._bind_scroll_wheel(self.left_scroll)
@@ -363,7 +376,7 @@ class VNDBGUI(ctk.CTk):
         # ── Right: Chinese ──
         self.right_frame = ctk.CTkFrame(self.panel_frame, corner_radius=8,
                                         border_width=1, border_color=COLOR_ZH_BORDER)
-        self.right_frame.grid(row=1, column=1, sticky="nsew", padx=(6, 15), pady=(0, 10))
+        self.right_frame.grid(row=1, column=2, sticky="nsew", padx=(8, 15), pady=(0, 10))
         self.right_frame.grid_rowconfigure(2, weight=1)
         self.right_frame.grid_columnconfigure(0, weight=1)
 
@@ -377,6 +390,7 @@ class VNDBGUI(ctk.CTk):
         self.right_scroll = ctk.CTkScrollableFrame(
             self.right_frame, corner_radius=6,
             border_width=0,
+            fg_color="#1e1e1e",
         )
         self.right_scroll.grid(row=2, column=0, sticky="nsew", padx=4, pady=2)
         self._bind_scroll_wheel(self.right_scroll)
@@ -500,7 +514,9 @@ class VNDBGUI(ctk.CTk):
         for i, r in enumerate(self._nonzh_releases):
             row = ReleaseRow(self.left_scroll, r, i == self._selected_nonzh_idx,
                              self._on_nonzh_click, i, zh_mode=False)
-            row.pack(fill="x", padx=4, pady=2)
+            # pady=1 lets the scrollable frame's background show through as a
+            # 1px visual separator — no border_width needed.
+            row.pack(fill="x", padx=4, pady=1)
 
     def _rebuild_zh_rows(self):
         """Clear and rebuild the zh scrollable row list."""
@@ -516,7 +532,8 @@ class VNDBGUI(ctk.CTk):
         for i, r in enumerate(self._zh_releases):
             row = ReleaseRow(self.right_scroll, r, i == self._selected_zh_idx,
                              self._on_zh_click, i, zh_mode=True)
-            row.pack(fill="x", padx=4, pady=2)
+            # pady=1 lets the scrollable frame's background show through
+            row.pack(fill="x", padx=4, pady=1)
 
     def _refresh_release_lists(self):
         self._rebuild_nonzh_rows()
@@ -576,41 +593,36 @@ class VNDBGUI(ctk.CTk):
         for child in scroll.winfo_children():
             if isinstance(child, ReleaseRow):
                 child.set_selected(child.row_index == selected_idx)
+            # Also check inside container frames (legacy support)
+            elif hasattr(child, 'winfo_children'):
+                for grandchild in child.winfo_children():
+                    if isinstance(grandchild, ReleaseRow):
+                        grandchild.set_selected(grandchild.row_index == selected_idx)
 
     # ── Event Handlers ──────────────────────────────────────────────
 
     @staticmethod
     def _bind_scroll_wheel(scroll_frame: ctk.CTkScrollableFrame) -> None:
-        """Bind mouse wheel event on the scrollable frame and its inner canvas for smooth scrolling."""
-        # Workaround: CTkScrollableFrame needs focus for wheel events.
-        # Bind on both the frame itself and its internal canvas/widgets.
+        """Bind mouse wheel on the scrollable frame for smooth scrolling."""
         def _on_mousewheel(event):
             scroll_frame._parent_canvas.yview_scroll(int(-9 * (event.delta / 120)), "units")
-
-        # Bind on the frame
         scroll_frame.bind("<MouseWheel>", _on_mousewheel, add=True)
-        # Bind on all children recursively (in case future items are added)
-        for child in scroll_frame.winfo_children():
-            child.bind("<MouseWheel>", _on_mousewheel, add=True)
 
     def _on_query_change(self, *args):
         pass
 
     def _on_manual_change(self, *args):
-        # Auto-update preview when user manually edits group field
         if self._suppress_manual_change:
             return
         active = self._get_active_release()
         self._update_preview(active)
 
     def _on_title_mode_change(self, value: str):
-        """Handle title mode segmented button change."""
         self._use_release_title = (value == "发行版标题")
         active = self._get_active_release()
         self._update_preview(active)
 
     def _get_active_release(self) -> VNRelease | None:
-        """Return the release that should be highlighted (focus side)."""
         if self._focus_side == "nonzh" and self._nonzh_releases:
             return self._nonzh_releases[self._selected_nonzh_idx]
         if self._focus_side == "zh" and self._zh_releases:
@@ -622,10 +634,8 @@ class VNDBGUI(ctk.CTk):
         return None
 
     def _get_base_release(self) -> VNRelease | None:
-        """Return the non-zh release as base for filename generation."""
         if self._nonzh_releases:
             return self._nonzh_releases[self._selected_nonzh_idx]
-        # Fallback: use zh release if no non-zh available
         if self._zh_releases:
             return self._zh_releases[self._selected_zh_idx]
         return None
@@ -651,7 +661,6 @@ class VNDBGUI(ctk.CTk):
         try:
             vn_info = self.api_client.search_vn(query)
         except VNDBMultipleResultsError as e:
-            # Capture immediately to avoid Python closure late-binding issue
             err_msg = str(e)
             candidates = e.candidates
             self.after(0, lambda: self._on_multiple_candidates(err_msg, candidates))
@@ -672,18 +681,15 @@ class VNDBGUI(ctk.CTk):
         self.after(0, lambda: self._on_search_success(vn_info))
 
     def _on_multiple_candidates(self, message: str, candidates: list[VNCandidate]):
-        """Show a dialog for the user to pick from multiple candidates."""
         dialog = CandidateDialog(self, candidates)
         self.wait_window(dialog)
         selected = dialog.get_selected()
         if selected is None:
-            # User cancelled
             self._searching = False
             self.search_btn.configure(state="normal", text="搜索 API")
             self.status_indicator.configure(text="已取消选择", text_color="gray60")
             return
 
-        # Fetch the selected VN
         self.status_indicator.configure(
             text=f"正在获取 {selected.id}…",
             text_color="gray60",
@@ -696,7 +702,6 @@ class VNDBGUI(ctk.CTk):
         thread.start()
 
     def _do_fetch_selected(self, vn_id: str):
-        """Fetch full VN info after user selects from candidates."""
         try:
             vn_info = self.api_client.fetch_vn_by_id(vn_id)
         except VNDBNotFoundError as e:
@@ -721,12 +726,10 @@ class VNDBGUI(ctk.CTk):
         self._nonzh_releases = [r for r in self._all_releases if not r.is_chinese_release()]
         self._zh_releases = [r for r in self._all_releases if r.is_chinese_release()]
 
-        # Sort non-zh: Japanese-language releases first, then by date descending
         def _nonzh_sort_key(r):
             lang_priority = 0 if "ja" in r.languages else 1
             date_parts = (r.released or "").split("-")
             try:
-                # Convert date to comparable integer (YYYYMMDD), descending
                 date_val = sum(int(p) * (10000 // (10 ** i)) for i, p in enumerate(date_parts[:3]))
             except (ValueError, IndexError):
                 date_val = 0
@@ -739,7 +742,6 @@ class VNDBGUI(ctk.CTk):
         self._selected_zh_idx = 0
         self._focus_side = "zh" if self._zh_releases else "nonzh"
 
-        # Auto-fill from the first zh release if available
         if self._zh_releases:
             r = self._zh_releases[0]
             grp = r.get_non_developer_group_name()
@@ -778,7 +780,6 @@ class VNDBGUI(ctk.CTk):
     # ── Preview ─────────────────────────────────────────────────────
 
     def _update_preview(self, *args):
-        """Update preview using non-zh release as base + zh-side group/lang info."""
         if not self._vn_info:
             self.preview_text.configure(state="normal")
             self.preview_text.delete("1.0", "end")
@@ -786,7 +787,6 @@ class VNDBGUI(ctk.CTk):
             self.preview_text.configure(state="disabled")
             return
 
-        # Always use non-zh release as the base for developer/date/title/platform
         base = self._get_base_release()
         if not base:
             self.preview_text.configure(state="normal")
@@ -795,7 +795,6 @@ class VNDBGUI(ctk.CTk):
             self.preview_text.configure(state="disabled")
             return
 
-        # Use group from UI, internal patch_date/language from zh selection
         filename = generate_filename(
             self._vn_info,
             base,
