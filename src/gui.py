@@ -726,17 +726,48 @@ class VNDBGUI(ctk.CTk):
         self._nonzh_releases = [r for r in self._all_releases if not r.is_chinese_release()]
         self._zh_releases = [r for r in self._all_releases if r.is_chinese_release()]
 
-        def _nonzh_sort_key(r):
-            lang_priority = 0 if "ja" in r.languages else 1
-            date_parts = (r.released or "").split("-")
+        def _parse_date_to_int(released: str | None) -> int:
+            """Parse 'YYYY-MM-DD' to int YYYYMMDD. Returns 0 for TBA/missing.
+            
+            Handles partial dates like '2026' or '2025-09'.
+            Missing month/day parts are padded with '99' so that year-only
+            (e.g. '2026') sorts at the END of that year, after any fully-specified
+            dates like 2025-09-26.
+            """
+            if not released:
+                return 0
+            parts = released.split("-")
+            parts = [p for p in parts if p]
             try:
-                date_val = sum(int(p) * (10000 // (10 ** i)) for i, p in enumerate(date_parts[:3]))
+                while len(parts) < 3:
+                    parts.append("99")
+                return sum(int(p) * (10000 // (10 ** i)) for i, p in enumerate(parts[:3]))
             except (ValueError, IndexError):
-                date_val = 0
-            return (lang_priority, -date_val)
+                return 0
+
+        def _nonzh_sort_key(r):
+            """Sort: ja first → en second → others; then ascending by date; TBA last."""
+            has_ja = "ja" in r.languages
+            has_en = "en" in r.languages
+            if has_ja:
+                lang_prio = 0
+            elif has_en:
+                lang_prio = 1
+            else:
+                lang_prio = 2
+
+            date_val = _parse_date_to_int(r.released)
+            tba = 1 if date_val == 0 else 0  # TBA/missing at the end
+            return (lang_prio, tba, date_val)
+
+        def _zh_sort_key(r):
+            """Descending by date (newest first); TBA last."""
+            date_val = _parse_date_to_int(r.released)
+            tba = 1 if date_val == 0 else 0
+            return (tba, -date_val)
 
         self._nonzh_releases.sort(key=_nonzh_sort_key)
-        self._zh_releases.sort(key=lambda r: r.released or "", reverse=True)
+        self._zh_releases.sort(key=_zh_sort_key)
 
         self._selected_nonzh_idx = 0
         self._selected_zh_idx = 0
