@@ -254,6 +254,9 @@ class VNDBGUI(ctk.CTk):
         # Title mode: False = use game original title, True = use release display title
         self._use_release_title = False
 
+        # Sanitize toggle: whether to replace illegal filename characters
+        self._sanitize_enabled = True
+
         # Suppress flag to prevent double-update from group_var trace during zh click
         self._suppress_manual_change = False
 
@@ -449,7 +452,16 @@ class VNDBGUI(ctk.CTk):
             text="文件名预览",
             font=ui_font(15, "bold"),
         )
-        self.preview_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(10, 6))
+        self.preview_label.grid(row=0, column=0, sticky="w", padx=15, pady=(10, 6))
+
+        self.sanitize_switch = ctk.CTkSwitch(
+            self.preview_card,
+            text="非法字符替换",
+            font=ui_font(12),
+            command=self._on_sanitize_toggle,
+        )
+        self.sanitize_switch.grid(row=0, column=1, sticky="e", padx=(0, 15), pady=(10, 6))
+        self.sanitize_switch.select()
 
         self.preview_text = ctk.CTkTextbox(
             self.preview_card,
@@ -619,6 +631,11 @@ class VNDBGUI(ctk.CTk):
 
     def _on_title_mode_change(self, value: str):
         self._use_release_title = (value == "发行版标题")
+        active = self._get_active_release()
+        self._update_preview(active)
+
+    def _on_sanitize_toggle(self):
+        self._sanitize_enabled = bool(self.sanitize_switch.get())
         active = self._get_active_release()
         self._update_preview(active)
 
@@ -833,6 +850,7 @@ class VNDBGUI(ctk.CTk):
             patch_date=self._patch_date,
             language=self._language,
             use_release_title=self._use_release_title,
+            sanitize=self._sanitize_enabled,
         )
 
         self.preview_text.configure(state="normal")

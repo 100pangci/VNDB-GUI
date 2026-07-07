@@ -21,9 +21,9 @@ ILLEGAL_CHAR_MAP = {
 _ILLEGAL_PATTERN = re.compile("[" + re.escape("".join(ILLEGAL_CHAR_MAP.keys())) + "]")
 
 
-def sanitize_filename(text: str) -> str:
+def sanitize_filename(text: str, enabled: bool = True) -> str:
     """Replace Windows-illegal filename characters with safe fullwidth equivalents."""
-    if not text:
+    if not text or not enabled:
         return text
     return _ILLEGAL_PATTERN.sub(lambda m: ILLEGAL_CHAR_MAP[m.group(0)], text)
 
@@ -35,6 +35,7 @@ def generate_filename(
     patch_date: str = "",
     language: str = "CHS",
     use_release_title: bool = False,
+    sanitize: bool = True,
 ) -> str:
     """
     Generate a formatted filename for a VN release.
@@ -82,13 +83,13 @@ def generate_filename(
     parts: list[str] = []
 
     # [Developer]
-    parts.append(f"[{sanitize_filename(developer)}]")
+    parts.append(f"[{sanitize_filename(developer, enabled=sanitize)}]")
 
     # [Date]
-    parts.append(f"[{sanitize_filename(date_str)}]")
+    parts.append(f"[{sanitize_filename(date_str, enabled=sanitize)}]")
 
     # Title
-    parts.append(sanitize_filename(title))
+    parts.append(sanitize_filename(title, enabled=sanitize))
 
     # [v+VNDB_ID] — strip any existing "v" prefix from VNInfo.id
     vid = vn_info.id
@@ -97,20 +98,20 @@ def generate_filename(
     parts.append(f"[v{vid}]")
 
     # [Platform]
-    parts.append(f"[{sanitize_filename(platform_str)}]")
+    parts.append(f"[{sanitize_filename(platform_str, enabled=sanitize)}]")
 
     # [Group name]
     if group_name_clean:
-        parts.append(f"[{sanitize_filename(group_name_clean)}]")
+        parts.append(f"[{sanitize_filename(group_name_clean, enabled=sanitize)}]")
     else:
         parts.append(f"[{PLACEHOLDER}]")
 
     # [Patch date] (optional)
     if patch_date_clean:
-        parts.append(f"[{sanitize_filename(patch_date_clean)}]")
+        parts.append(f"[{sanitize_filename(patch_date_clean, enabled=sanitize)}]")
 
     # [Language]
-    parts.append(f"[{sanitize_filename(language_clean)}]")
+    parts.append(f"[{sanitize_filename(language_clean, enabled=sanitize)}]")
 
     return "".join(parts)
 
