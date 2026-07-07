@@ -470,12 +470,15 @@ class VNDBGUI(ctk.CTk):
             corner_radius=8,
             wrap="none",
         )
-        self.preview_text.grid(row=1, column=0, sticky="ew", padx=(15, 8), pady=(0, 10))
+        self.preview_text.grid(row=1, column=0, sticky="nsew", padx=(15, 8), pady=(0, 10))
         self.preview_text.insert("1.0", "（等待搜索）")
         self.preview_text.configure(state="disabled")
 
+        self.btn_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent")
+        self.btn_frame.grid(row=1, column=1, sticky="ns", padx=(0, 15), pady=(0, 10))
+
         self.copy_btn = ctk.CTkButton(
-            self.preview_card,
+            self.btn_frame,
             text="一键复制",
             font=ui_font(13, "bold"),
             height=36,
@@ -484,7 +487,19 @@ class VNDBGUI(ctk.CTk):
             hover_color="#1e3f6f",
             command=self.copy_filename,
         )
-        self.copy_btn.grid(row=1, column=1, sticky="ns", padx=(0, 15), pady=(0, 10))
+        self.copy_btn.pack(fill="x", pady=(0, 4))
+
+        self.simple_copy_btn = ctk.CTkButton(
+            self.btn_frame,
+            text="复制简要标题",
+            font=ui_font(13, "bold"),
+            height=36,
+            width=100,
+            fg_color="#5a4a2a",
+            hover_color="#4a3a1a",
+            command=self.copy_simplified_title,
+        )
+        self.simple_copy_btn.pack(fill="x")
 
         self.preview_card.grid_columnconfigure(0, weight=1)
 
@@ -865,6 +880,29 @@ class VNDBGUI(ctk.CTk):
             self.clipboard_append(content)
             self.status_indicator.configure(text="✓ 已复制到剪贴板", text_color="#2b7a4b")
             self.after(3000, lambda: self._reset_status_text())
+
+    def copy_simplified_title(self):
+        if not self._vn_info:
+            return
+
+        base = self._get_base_release()
+        if not base:
+            return
+
+        if self._use_release_title:
+            title = base.get_display_title()
+        else:
+            title = self._vn_info.get_original_title()
+
+        group = self.group_var.get().strip()
+
+        simplified = f"【{group}】{title}" if group else title
+        simplified = sanitize_filename(simplified, enabled=self._sanitize_enabled)
+
+        self.clipboard_clear()
+        self.clipboard_append(simplified)
+        self.status_indicator.configure(text="✓ 已复制简要标题", text_color="#2b7a4b")
+        self.after(3000, lambda: self._reset_status_text())
 
     def _reset_status_text(self):
         if self._vn_info and self._all_releases:
