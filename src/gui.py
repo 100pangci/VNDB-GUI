@@ -46,8 +46,8 @@ COLOR_LEFT_HEADER_LIGHT = "#e0e0e0"
 COLOR_SCROLL_BG_LIGHT = "#f5f5f5"
 COLOR_ROW_SELECTED_LIGHT = "#d0e4f7"
 COLOR_ROW_NORMAL_LIGHT = "#ffffff"
-COLOR_CANCEL_BG_LIGHT = "#cccccc"
-COLOR_CANCEL_HOVER_LIGHT = "#bbbbbb"
+COLOR_CANCEL_BG_LIGHT = "#aaaaaa"
+COLOR_CANCEL_HOVER_LIGHT = "#999999"
 COLOR_CANDIDATE_HOVER_LIGHT = "#e0e8f0"
 
 DEFAULT_FORMAT_TEMPLATE = "[{developer}][{date}]{title}[{vid}][{platform}][{group}][{patch_date}][{language}]"
@@ -418,6 +418,32 @@ class VNDBGUI(ctk.CTk):
         self._build_preview_card()
         self._build_footer()
 
+        self.update_idletasks()
+        scaling = float(self.tk.call("tk", "scaling"))
+        non_expand_h = 0
+        panel_pady = 0
+        for child in self.winfo_children():
+            try:
+                info = child.pack_info()
+            except Exception:
+                continue
+            side = info.get("side", "top")
+            if side not in ("top", "bottom"):
+                continue
+            expand = info.get("expand", False)
+            pady = info.get("pady", (0, 0))
+            if isinstance(pady, (int, float)):
+                pt = pb = pady
+            else:
+                pt, pb = pady
+            if expand:
+                panel_pady = pt + pb
+            else:
+                non_expand_h += child.winfo_reqheight() + pt + pb
+        panel_min_h = int(120 * scaling)
+        deco_h = int(30 * scaling)
+        self.minsize(840, non_expand_h + panel_min_h + panel_pady + deco_h)
+
         self._update_preview()
 
     # ── Theme ───────────────────────────────────────────────────────
@@ -761,6 +787,9 @@ class VNDBGUI(ctk.CTk):
         self.footer_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.footer_frame.pack(fill="x", padx=20, pady=(6, 10))
 
+        border = COLOR_BORDER if self._is_dark else COLOR_BORDER_LIGHT
+        hover = "#2a3d5a" if self._is_dark else "#c0cbd6"
+        text = "gray70" if self._is_dark else "gray30"
         self.custom_format_btn = ctk.CTkButton(
             self.footer_frame,
             text="自定义拼接格式",
@@ -769,9 +798,9 @@ class VNDBGUI(ctk.CTk):
             width=140,
             fg_color="transparent",
             border_width=1,
-            border_color=COLOR_BORDER,
-            hover_color="#2a3d5a",
-            text_color="gray70",
+            border_color=border,
+            hover_color=hover,
+            text_color=text,
             command=self._open_format_dialog,
         )
         self.custom_format_btn.pack(side="left")
