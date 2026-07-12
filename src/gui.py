@@ -875,6 +875,10 @@ class VNDBGUI(ctk.CTk):
     def _on_nonzh_click(self, idx: int):
         self._focus_side = "nonzh"
         self._selected_nonzh_idx = idx
+        # Set language from the non-Chinese release's primary language
+        r = self._nonzh_releases[idx]
+        if r.languages:
+            self._language = r.languages[0].upper()
         # Update selection on both sides without any widget destruction/rebuild
         self._update_selection_on_side("nonzh")
         self._update_selection_on_side("zh")
@@ -1119,6 +1123,10 @@ class VNDBGUI(ctk.CTk):
                 self._language = "CHT"
             elif "zh" in r.languages:
                 self._language = "CHS"
+        elif self._nonzh_releases:
+            r = self._nonzh_releases[0]
+            if r.languages:
+                self._language = r.languages[0].upper()
 
         self._refresh_release_lists()
 
