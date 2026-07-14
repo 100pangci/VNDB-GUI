@@ -205,12 +205,24 @@ class CustomFormatDialog(ctk.CTkToplevel):
             font=ui_font(15, "bold"),
         ).pack(anchor="w", padx=20, pady=(16, 4))
 
+        var_frame = ctk.CTkFrame(self, fg_color="transparent")
+        var_frame.pack(anchor="w", padx=20, pady=(0, 8))
         ctk.CTkLabel(
-            self,
-            text="可用变量：{developer} {date} {title} {vid} {platform} {group} {patch_date} {language}",
+            var_frame,
+            text="可用变量：",
             font=ui_font(11),
             text_color="gray50",
-        ).pack(anchor="w", padx=20, pady=(0, 8))
+        ).pack(side="left")
+        for var_name in ["{developer}", "{date}", "{title}", "{vid}", "{platform}", "{group}", "{patch_date}", "{language}"]:
+            lbl = ctk.CTkLabel(
+                var_frame,
+                text=var_name,
+                font=ctk.CTkFont(family=UI_FONT_FAMILY, size=11, underline=True),
+                text_color="#4a9eff",
+                cursor="hand2",
+            )
+            lbl.pack(side="left", padx=(0, 6))
+            lbl.bind("<Button-1>", lambda e, v=var_name: self._insert_variable(v))
 
         self.format_entry = ctk.CTkEntry(
             self,
@@ -259,6 +271,12 @@ class CustomFormatDialog(ctk.CTkToplevel):
         ).pack(side="left")
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _insert_variable(self, var_name):
+        current = self._template_var.get()
+        self._template_var.set(current + var_name)
+        self.format_entry.focus()
+        self.format_entry.icursor(len(current) + len(var_name))
 
     def _do_save(self):
         self._on_save(self._template_var.get())
@@ -417,32 +435,6 @@ class VNDBGUI(ctk.CTk):
         self._build_manual_card()      # only 汉化组 field
         self._build_preview_card()
         self._build_footer()
-
-        self.update_idletasks()
-        scaling = float(self.tk.call("tk", "scaling"))
-        non_expand_h = 0
-        panel_pady = 0
-        for child in self.winfo_children():
-            try:
-                info = child.pack_info()
-            except Exception:
-                continue
-            side = info.get("side", "top")
-            if side not in ("top", "bottom"):
-                continue
-            expand = info.get("expand", False)
-            pady = info.get("pady", (0, 0))
-            if isinstance(pady, (int, float)):
-                pt = pb = pady
-            else:
-                pt, pb = pady
-            if expand:
-                panel_pady = pt + pb
-            else:
-                non_expand_h += child.winfo_reqheight() + pt + pb
-        panel_min_h = int(120 * scaling)
-        deco_h = int(30 * scaling)
-        self.minsize(840, non_expand_h + panel_min_h + panel_pady + deco_h)
 
         self._update_preview()
 
@@ -1151,9 +1143,14 @@ class VNDBGUI(ctk.CTk):
     # ── Preview ─────────────────────────────────────────────────────
 
     def _generate_custom_filename(self, template: str, vn_info, release):
+        if "{patch_date}" not in template:
+            active = self._get_active_release()
+            date_val = active.format_released() if active else release.format_released()
+        else:
+            date_val = release.format_released()
         parts = {
             "developer": release.get_developer_name() or PLACEHOLDER,
-            "date": release.format_released(),
+            "date": date_val,
             "title": vn_info.get_original_title() if not self._use_release_title else release.get_display_title(),
             "vid": f"v{vn_info.id.lstrip('v')}" if vn_info.id else PLACEHOLDER,
             "platform": release.get_platforms_display().replace(", ", "_") if release.get_platforms_display() != PLACEHOLDER else PLACEHOLDER,
