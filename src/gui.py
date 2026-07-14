@@ -860,6 +860,10 @@ class VNDBGUI(ctk.CTk):
         self.left_count.configure(text=f"共 {len(self._nonzh_releases)} 个版本")
         self.right_count.configure(text=f"共 {len(self._zh_releases)} 个版本")
 
+        # Scroll both lists back to top
+        self.left_scroll._parent_canvas.yview_moveto(0)
+        self.right_scroll._parent_canvas.yview_moveto(0)
+
         # Update preview based on active release
         active = self._get_active_release()
         self._update_preview(active)
