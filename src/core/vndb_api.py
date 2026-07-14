@@ -261,6 +261,7 @@ class VNDBAPIClient:
     # ── low-level helpers ────────────────────────────────────────────────
 
     def _post(self, endpoint: str, payload: dict) -> dict:
+        """发送 POST 请求到 VNDB API，统一处理超时、连接和 HTTP 错误。"""
         url = f"{API_BASE}/{endpoint}"
         try:
             resp = self.session.post(url, json=payload, timeout=self.timeout)
@@ -304,6 +305,7 @@ class VNDBAPIClient:
     # ── VN search ──────────────────────────────────────────────────────
 
     def search_vn_by_id(self, vn_id: str) -> VNInfo:
+        """通过 VNDB ID 搜索视觉小说并获取完整信息（含发行版本）。"""
         normalized = vn_id.strip().lower()
         if not normalized.startswith("v"):
             normalized = f"v{normalized}"
@@ -339,6 +341,7 @@ class VNDBAPIClient:
         return [VNCandidate.from_dict(r) for r in results]
 
     def search_vn_by_title(self, title: str) -> VNInfo:
+        """通过标题搜索，若唯一匹配则返回完整 VN 信息；若多结果则抛出异常。"""
         candidates = self.search_vn_candidates(title)
         if len(candidates) > 1:
             raise VNDBMultipleResultsError(
@@ -350,6 +353,7 @@ class VNDBAPIClient:
         return VNInfo.from_dict(raw_vn)
 
     def search_vn(self, query: str) -> VNInfo:
+        """自动判断查询类型（ID 或标题）并调用对应的搜索方法。"""
         query = query.strip()
         if query.lower().startswith("v") and query[1:].isdigit():
             return self.search_vn_by_id(query)
@@ -400,6 +404,7 @@ class VNDBAPIClient:
     # ── Release fetching ───────────────────────────────────────────────
 
     def _fetch_releases(self, vn_id: str) -> list[dict]:
+        """获取指定 VN 的所有发行版本（含分页）。"""
         payload: dict[str, Any] = {
             "filters": ["vn", "=", ["id", "=", vn_id]],
             "fields": RELEASE_FIELDS,

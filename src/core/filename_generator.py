@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from .vndb_api import VNInfo, VNRelease, PLACEHOLDER
 
-# Mapping of Windows-illegal filename characters to fullwidth replacements
+# Windows 非法字符 → 全角字符替换映射
 ILLEGAL_CHAR_MAP = {
     ":": "：",
     "?": "？",

@@ -1,0 +1,17 @@
+"""VNDB GUI 通用配色（深色/浅色主题共用）。"""
+
+# 主题共用色
+COLOR_ACTIVE = "#3a7bd5"
+
+# 语义颜色
+COLOR_SUCCESS = "#2b7a4b"
+COLOR_SUCCESS_HOVER = "#1e5f38"
+COLOR_ERROR = "#d32f2f"
+COLOR_LINK = "#1f6aa5"
+COLOR_VAR_LINK = "#4a9eff"
+
+# 功能按钮颜色
+COLOR_COPY_BTN = "#2b5797"
+COLOR_COPY_BTN_HOVER = "#1e3f6f"
+COLOR_SIMPLE_COPY_BTN = "#5a4a2a"
+COLOR_SIMPLE_COPY_BTN_HOVER = "#4a3a1a"

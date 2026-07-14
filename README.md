@@ -159,17 +159,23 @@ VNDB_GUI_VERSION=1.0.0 ./build_gui_linux.sh
 ```
 VNDB-GUI/
 ├── src/
-│   ├── gui.py                         # 主界面 (CustomTkinter)
+│   ├── gui.py                         # 主窗口 (VNDBGUI) — 界面布局与事件处理
+│   ├── ui_helpers.py                  # 共享 UI 工具 (字体、对话框居中、格式模板)
+│   ├── widgets.py                     # 可复用组件 (ReleaseRow 发行版本行)
+│   ├── dialogs.py                     # 模态对话框 (候选选择、自定义格式编辑)
 │   ├── app_version.py                 # 版本信息读取
 │   ├── core/
 │   │   ├── __init__.py
+│   │   ├── colors_common.py           # 通用配色常量 (语义颜色、功能按钮色)
+│   │   ├── colors_dark.py             # 深色主题配色方案
+│   │   ├── colors_light.py            # 浅色主题配色方案
 │   │   ├── vndb_api.py                # VNDB API v2 客户端 (数据模型 + 查询)
 │   │   └── filename_generator.py      # 文件名生成与非法字符过滤
 ├── test/
-│   ├── test_api.py                    # API 测试用例
-│   ├── test_api2.py                   # API 测试用例 2
-│   ├── test_api3.py                   # API 测试用例 3
-│   └── test_debug_v50215.py           # 调试测试
+│   ├── test_api.py
+│   ├── test_api2.py
+│   ├── test_api3.py
+│   └── test_debug_v50215.py
 ├── main.py                            # 程序入口
 ├── version.txt                        # 版本号 (当前: 1.0.0)
 ├── build_gui_exe.bat                  # Windows 打包脚本 (PyInstaller)
@@ -186,9 +192,13 @@ VNDB-GUI/
 
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| **GUI** | `src/gui.py` | 基于 CustomTkinter 的桌面图形界面，包含搜索、双列发行列表、手动编辑、预览与复制等功能 |
+| **主窗口** | `src/gui.py` | `VNDBGUI` 主窗口类 — 界面布局、搜索调度、预览生成、复制操作 |
+| **UI 工具** | `src/ui_helpers.py` | 共享字体工厂 `ui_font()`、对话框居中 `center_dialog()`、默认格式模板 |
+| **组件** | `src/widgets.py` | `ReleaseRow` 可复用组件 — 发行版本列表中可点击的每一行 |
+| **对话框** | `src/dialogs.py` | `CandidateDialog` 多结果选择、`CustomFormatDialog` 自定义格式编辑 |
 | **API 客户端** | `src/core/vndb_api.py` | VNDB API v2 的 HTTP 客户端，处理认证、分页、错误映射。包含数据模型（`VNInfo`、`VNRelease`、`VNCandidate` 等） |
 | **文件名生成器** | `src/core/filename_generator.py` | 根据 VN 信息和发行版本生成标准文件名，包含 Windows 非法字符替换逻辑 |
+| **配色方案** | `src/core/colors_{common,dark,light}.py` | 通用/深色/浅色主题配色常量集中管理 |
 | **版本管理** | `src/app_version.py` | 支持从文件、环境变量读取版本号，兼容 PyInstaller 打包后的资源路径 |
 
 ### 数据模型

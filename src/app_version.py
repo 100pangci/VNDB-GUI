@@ -10,10 +10,12 @@ VERSION_FILE = "version.txt"
 
 
 def _base_dir() -> str:
+    """返回应用基础路径（PyInstaller 打包后返回 _MEIPASS，否则为脚本所在目录）。"""
     return getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 
 
 def _read_bundled_version() -> str:
+    """从 version.txt 文件中读取版本号。"""
     version_path = os.path.join(_base_dir(), VERSION_FILE)
     try:
         with open(version_path, "r", encoding="utf-8") as f:
