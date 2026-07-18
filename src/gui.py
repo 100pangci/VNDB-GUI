@@ -28,6 +28,7 @@ from core.colors_common import (
     COLOR_ERROR, COLOR_LINK,
     COLOR_COPY_BTN, COLOR_COPY_BTN_HOVER,
     COLOR_SIMPLE_COPY_BTN, COLOR_SIMPLE_COPY_BTN_HOVER,
+    COLOR_LINK_BTN, COLOR_LINK_BTN_HOVER,
 )
 from ui_helpers import ui_font, DEFAULT_FORMAT_TEMPLATE
 from widgets import ReleaseRow
@@ -126,6 +127,8 @@ class VNDBGUI(ctk.CTk):
 
         self._custom_format_template = ctk.StringVar(value=DEFAULT_FORMAT_TEMPLATE)
         self._saved_format = ""
+        self._pending_vndb_link_after: str | None = None
+        self._link_btn_waiting = False
 
         self._load_config()
 
@@ -413,12 +416,28 @@ class VNDBGUI(ctk.CTk):
         self.preview_card.pack(fill="x", padx=20, pady=(8, 0))
         self.preview_card.grid_columnconfigure(0, weight=1)
 
+        self.preview_header_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent")
+        self.preview_header_frame.grid(row=0, column=0, sticky="w", padx=15, pady=(10, 6))
+
         self.preview_label = ctk.CTkLabel(
-            self.preview_card,
+            self.preview_header_frame,
             text="文件名预览",
             font=ui_font(15, "bold"),
         )
-        self.preview_label.grid(row=0, column=0, sticky="w", padx=15, pady=(10, 6))
+        self.preview_label.pack(side="left")
+
+        self.link_copy_btn = ctk.CTkButton(
+            self.preview_header_frame,
+            text="复制页面链接",
+            font=ui_font(12, "bold"),
+            height=28,
+            width=100,
+            fg_color=COLOR_LINK_BTN,
+            hover_color=COLOR_LINK_BTN_HOVER,
+            command="",
+        )
+        self.link_copy_btn.pack(side="left", padx=(6, 0))
+        self.link_copy_btn.bind("<Button-1>", self._on_vndb_link_click)
 
         self.sanitize_switch = ctk.CTkSwitch(
             self.preview_card,
@@ -878,6 +897,43 @@ class VNDBGUI(ctk.CTk):
         self.clipboard_append(simplified)
         self.status_indicator.configure(text="✓ 已复制简要标题", text_color=COLOR_SUCCESS)
         self.after(3000, lambda: self._reset_status_text())
+
+    def _get_vndb_url(self) -> str | None:
+        if not self._vn_info or not self._vn_info.id:
+            return None
+        return f"https://vndb.org/{self._vn_info.id}"
+
+    def _on_vndb_link_click(self, event: Any) -> None:
+        if self._link_btn_waiting:
+            if self._pending_vndb_link_after:
+                self.after_cancel(self._pending_vndb_link_after)
+                self._pending_vndb_link_after = None
+            self._link_btn_waiting = False
+            self.link_copy_btn.configure(text="复制页面链接")
+            self._open_vndb_link()
+        else:
+            self._copy_vndb_link()
+            self._link_btn_waiting = True
+            self.link_copy_btn.configure(text="再次点击打开链接")
+            self._pending_vndb_link_after = self.after(3000, self._reset_link_btn)
+
+    def _open_vndb_link(self) -> None:
+        url = self._get_vndb_url()
+        if url:
+            webbrowser.open_new_tab(url)
+
+    def _copy_vndb_link(self) -> None:
+        url = self._get_vndb_url()
+        if url:
+            self.clipboard_clear()
+            self.clipboard_append(url)
+            self.status_indicator.configure(text="✓ 已复制VNDB链接", text_color=COLOR_SUCCESS)
+            self.after(3000, lambda: self._reset_status_text())
+
+    def _reset_link_btn(self) -> None:
+        self._pending_vndb_link_after = None
+        self._link_btn_waiting = False
+        self.link_copy_btn.configure(text="复制页面链接")
 
     def _reset_status_text(self) -> None:
         """3 秒后将状态文字重置为版本计数。"""
