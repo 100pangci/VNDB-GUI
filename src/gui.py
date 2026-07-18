@@ -59,7 +59,7 @@ def _parse_date_to_int(released: str | None) -> int:
     try:
         while len(parts) < 3:
             parts.append("99")
-        return sum(int(p) * (10000 // (10 ** i)) for i, p in enumerate(parts[:3]))
+        return sum(int(p) * (10000 // (100 ** i)) for i, p in enumerate(parts[:3]))
     except (ValueError, IndexError):
         return 0
 
