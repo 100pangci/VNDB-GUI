@@ -349,8 +349,7 @@ class VNDBAPIClient:
                 candidates,
             )
 
-        raw_vn = self._fetch_vn_by_id(candidates[0].id)
-        return VNInfo.from_dict(raw_vn)
+        return self.fetch_vn_by_id(candidates[0].id)
 
     def search_vn(self, query: str) -> VNInfo:
         """自动判断查询类型（ID 或标题）并调用对应的搜索方法。"""
@@ -380,26 +379,6 @@ class VNDBAPIClient:
         releases = self._fetch_releases(normalized)
         raw_vn["releases"] = releases
         return VNInfo.from_dict(raw_vn)
-
-    def _fetch_vn_by_id(self, vn_id: str) -> dict:
-        """Internal helper: fetch raw VN data by ID (without exception wrapping)."""
-        normalized = vn_id.strip().lower()
-        if not normalized.startswith("v"):
-            normalized = f"v{normalized}"
-
-        payload: dict[str, Any] = {
-            "filters": ["id", "=", normalized],
-            "fields": VN_FIELDS,
-        }
-        data = self._post("vn", payload)
-        results = data.get("results", [])
-        if not results:
-            raise VNDBNotFoundError(f"未找到 ID 为 {normalized} 的视觉小说。")
-
-        raw_vn = results[0]
-        releases = self._fetch_releases(normalized)
-        raw_vn["releases"] = releases
-        return raw_vn
 
     # ── Release fetching ───────────────────────────────────────────────
 

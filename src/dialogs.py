@@ -103,6 +103,7 @@ class CustomFormatDialog(ctk.CTkToplevel):
         self._on_save = on_save
         self._is_dark = getattr(parent, '_is_dark', True)
         self._saved_format = getattr(parent, '_saved_format', "")
+        self._original_template = template_var.get()
 
         self._build_ui()
 
@@ -179,10 +180,10 @@ class CustomFormatDialog(ctk.CTkToplevel):
             width=80,
             fg_color="gray50",
             hover_color="gray40",
-            command=self.destroy,
+            command=self._do_cancel,
         ).pack(side="left")
 
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.protocol("WM_DELETE_WINDOW", self._do_cancel)
 
     def _insert_variable(self, var_name):
         current = self._template_var.get()
@@ -190,9 +191,14 @@ class CustomFormatDialog(ctk.CTkToplevel):
         self.format_entry.focus()
         self.format_entry.icursor(len(current) + len(var_name))
 
+    def _do_cancel(self):
+        self._template_var.set(self._original_template)
+        self.destroy()
+
     def _do_save(self):
         self._on_save(self._template_var.get())
         self.destroy()
 
     def _do_restore(self):
         self._template_var.set(DEFAULT_FORMAT_TEMPLATE)
+        self._do_save()

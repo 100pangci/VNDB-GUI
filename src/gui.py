@@ -868,7 +868,7 @@ class VNDBGUI(ctk.CTk):
     def copy_filename(self) -> None:
         """将当前预览的文件名复制到剪贴板。"""
         content = self.preview_text.get("1.0", "end-1c")
-        if content and content not in ("（等待搜索）", "（请选择发行版本）"):
+        if content and content not in ("（等待搜索）", "（请选择原版发行）"):
             self.clipboard_clear()
             self.clipboard_append(content)
             self.status_indicator.configure(text="✓ 已复制到剪贴板", text_color=COLOR_SUCCESS)
