@@ -34,6 +34,7 @@ from ui_helpers import ui_font, DEFAULT_FORMAT_TEMPLATE
 from widgets import ReleaseRow
 from dialogs import CandidateDialog, CustomFormatDialog
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PROJECT_URL = "https://github.com/100pangci/VNDB-GUI"
 
@@ -58,7 +59,7 @@ def _parse_date_to_int(released: str | None) -> int:
     try:
         while len(parts) < 3:
             parts.append("99")
-        return sum(int(p) * (10000 // (100 ** i)) for i, p in enumerate(parts[:3]))
+        return sum(int(p) * (10000 // (10 ** i)) for i, p in enumerate(parts[:3]))
     except (ValueError, IndexError):
         return 0
 
@@ -809,14 +810,17 @@ class VNDBGUI(ctk.CTk):
 
     def _generate_custom_filename(self, template: str, vn_info: VNInfo, release: VNRelease) -> str:
         """根据用户自定义模板生成文件名，替换模板中的占位变量。"""
-        date_val = release.format_released()
-        platform_display = release.get_platforms_display()
+        if "{patch_date}" not in template:
+            active = self._get_active_release()
+            date_val = active.format_released() if active else release.format_released()
+        else:
+            date_val = release.format_released()
         parts: dict[str, str] = {
             "developer": release.get_developer_name() or PLACEHOLDER,
             "date": date_val,
             "title": vn_info.get_original_title() if not self._use_release_title else release.get_display_title(),
             "vid": f"v{vn_info.id.lstrip('v')}" if vn_info.id else PLACEHOLDER,
-            "platform": platform_display.replace(", ", "_") if platform_display != PLACEHOLDER else PLACEHOLDER,
+            "platform": release.get_platforms_display().replace(", ", "_") if release.get_platforms_display() != PLACEHOLDER else PLACEHOLDER,
             "group": self.group_var.get().strip() or PLACEHOLDER,
             "patch_date": self._patch_date if self._patch_date else "",
             "language": self._language.upper(),
@@ -864,7 +868,7 @@ class VNDBGUI(ctk.CTk):
     def copy_filename(self) -> None:
         """将当前预览的文件名复制到剪贴板。"""
         content = self.preview_text.get("1.0", "end-1c")
-        if content and content not in ("（等待搜索）", "（请选择发行版本）", "（请选择原版发行）"):
+        if content and content not in ("（等待搜索）", "（请选择发行版本）"):
             self.clipboard_clear()
             self.clipboard_append(content)
             self.status_indicator.configure(text="✓ 已复制到剪贴板", text_color=COLOR_SUCCESS)
