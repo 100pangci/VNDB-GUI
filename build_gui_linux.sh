@@ -29,6 +29,7 @@ pyinstaller --onefile --windowed --clean \
   --distpath release \
   --workpath build/pyinstaller \
   --specpath build/pyinstaller \
+  --paths "$ROOT_DIR/src" \
   --collect-all customtkinter \
   --add-data "$ROOT_DIR/build/pyinstaller/version.txt:." \
   "$ROOT_DIR/src/gui.py"

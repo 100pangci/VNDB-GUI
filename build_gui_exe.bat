@@ -35,6 +35,7 @@ pyinstaller --onefile --windowed --clean ^
   --distpath release ^
   --workpath "%BUILD_DIR%" ^
   --specpath "%BUILD_DIR%" ^
+  --paths src ^
   --add-data "%CTK_PATH%;customtkinter" ^
   --add-data "%VERSION_FILE%;." ^
   src\gui.py
